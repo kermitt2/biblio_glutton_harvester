@@ -35,7 +35,9 @@ class OAHarverster(object):
         self._load_config(config_path)
         self._init_lmdb()
 
-        self.s3 = S3.S3(self.config)
+        self.s3 = None
+        if self.config["bucket_name"] is not None and len(self.config["bucket_name"]) is not 0:
+            self.s3 = S3.S3(self.config)
 
     def _load_config(self, path='./config.json'):
         """
@@ -177,31 +179,56 @@ class OAHarverster(object):
         # generate thumbnails
         generate_thumbnail(local_filename)
         
-        # upload to S3 
-        # upload is already in parallel for individual file (with parts)
-        # so we don't further upload in parallel at the level of the files
         dest_path = generateS3Path(local_entry['id'])
-        self.s3.upload_file_to_s3(local_filename, dest_path)
         thumb_file_small = local_filename.replace('.pdf', '-thumb-small.png')
-        if os.path.isfile(thumb_file_small):
-            self.s3.upload_file_to_s3(thumb_file_small, dest_path)
-
         thumb_file_medium = local_filename.replace('.pdf', '-thumb-medium.png')
-        if os.path.isfile(thumb_file_medium): 
-            self.s3.upload_file_to_s3(thumb_file_medium, dest_path)
-        
         thumb_file_large = local_filename.replace('.pdf', '-thumb-large.png')
-        if os.path.isfile(thumb_file_large): 
-            self.s3.upload_file_to_s3(thumb_file_large, dest_path)
+
+        if self.s3 is not None:
+            # upload to S3 
+            # upload is already in parallel for individual file (with parts)
+            # so we don't further upload in parallel at the level of the files
+            self.s3.upload_file_to_s3(local_filename, dest_path)
+            
+            if os.path.isfile(thumb_file_small):
+                self.s3.upload_file_to_s3(thumb_file_small, dest_path)
+
+            if os.path.isfile(thumb_file_medium): 
+                self.s3.upload_file_to_s3(thumb_file_medium, dest_path)
+            
+            if os.path.isfile(thumb_file_large): 
+                self.s3.upload_file_to_s3(thumb_file_large, dest_path)
+        else:
+            # save under local storate indicated by data_path in the config json
+            try:
+                local_dest_path = os.path.join(self.config["data_path"], dest_path)
+                os.makedirs(os.path.dirname(local_dest_path), exist_ok=True)
+                shutil.copyfile(local_filename, os.path.join(local_dest_path, local_entry['id']+".pdf"))
+
+                thumb_file_small = local_filename.replace('.pdf', '-thumb-small.png')
+                shutil.copyfile(thumb_file_small, os.path.join(local_dest_path, local_entry['id']+"-thumb-small.png"))
+
+                thumb_file_medium = local_filename.replace('.pdf', '-thumb-medium.png')
+                shutil.copyfile(thumb_file_medium, os.path.join(local_dest_path, local_entry['id']+"-thumb-medium.png"))
+
+                thumb_file_large = local_filename.replace('.pdf', '-thumb-large.png')
+                shutil.copyfile(thumb_file_large, os.path.join(local_dest_path, local_entry['id']+"-thumb-larger.png"))
+
+            except IOError as e:
+                print("invalid path", str(e))       
 
         # clean pdf and thumbnail files
-        os.remove(local_filename)
-        if os.path.isfile(thumb_file_small): 
-            os.remove(thumb_file_small)
-        if os.path.isfile(thumb_file_medium): 
-            os.remove(thumb_file_medium)
-        if os.path.isfile(thumb_file_large): 
-            os.remove(thumb_file_large)
+        try:
+            os.remove(local_filename)
+            if os.path.isfile(thumb_file_small): 
+                os.remove(thumb_file_small)
+            if os.path.isfile(thumb_file_medium): 
+                os.remove(thumb_file_medium)
+            if os.path.isfile(thumb_file_large): 
+                os.remove(thumb_file_large)
+        except IOError as e:
+            print("temporary file cleaning failed:", str(e))       
+
 
     def reprocessFailed(self):
         """
@@ -300,6 +327,11 @@ class OAHarverster(object):
 
         # re-init the environments
         self._init_lmdb()
+
+        # clean any possibly remaining tmp files (.pdf and .png)
+        for f in os.listdir(self.config["data_path"]):
+            if f.endswith(".pdf") or f.endswith(".png") :
+                os.remove(os.path.join(self.config["data_path"], f))
 
 def _serialize_pickle(a):
     return pickle.dumps(a)

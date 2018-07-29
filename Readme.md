@@ -54,7 +54,7 @@ A configuration file must be completed, by default the file `config.json` will b
 
 ## Usage and options
 
-### Haversting of Unpaywall dataset
+### Harvesting of Unpaywall dataset
 
 
 ```
@@ -87,7 +87,7 @@ If the process is interrupted, relaunching the above command will resume the pro
 > python3 OAHarvester.py --reset --unpaywall /mnt/data/biblio/unpaywall_snapshot_2018-06-21T164548_with_versions.jsonl.gz
 ```
 
-After the completion of the snapshot, we can retry the PDF harvesting for the failed entry with the parameter `--reprocess`:
+After the completion of the snapshot, we can retry the PDF harvesting for the failed entries with the parameter `--reprocess`:
 
 ```bash
 > python3 OAHarvester.py --reprocess --unpaywall /mnt/data/biblio/unpaywall_snapshot_2018-06-21T164548_with_versions.jsonl.gz
@@ -119,7 +119,7 @@ The UUID can then be used for accessing the resources for this entry, the prefix
 
 - thumbnail small (500px width): `1b/a0/cc/e3/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2-thumb-large.png`
 
-Depending on the config, the resources can be accessed either locally under `data_path` or on AWS S3 following the URL prefix: `https://bucket_name.s3.amazonaws.com/`, for instance `https://bucket_name.s3.amazonaws.com/1b/a0/cc/e3/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2.pdf`.
+Depending on the config, the resources can be accessed either locally under `data_path` or on AWS S3 following the URL prefix: `https://bucket_name.s3.amazonaws.com/`, for instance `https://bucket_name.s3.amazonaws.com/1b/a0/cc/e3/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2.pdf` - if you have the appropriate access rights.
 
 ## License and contact
 

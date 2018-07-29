@@ -34,8 +34,7 @@ class S3(object):
                 full_path = dest_path + "/" + file_name
         else:
             full_path = file_name
-        s3_client.upload_file(
-            file_path, self.bucket_name, full_path)
+        s3_client.upload_file(file_path, self.bucket_name, full_path)
 
     def upload_object(self, body, s3_key):
         """
@@ -83,4 +82,3 @@ class S3(object):
                     s3_file_name = key['Key'].split('/')[-1]
                     bucket_object_list.append(s3_file_name)
         return bucket_object_list
-        
