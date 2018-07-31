@@ -16,10 +16,11 @@ import S3
 from concurrent.futures import ThreadPoolExecutor
 import subprocess
 
-map_size = 100 * 1024 * 1024 * 1024 
 
 class OAHarverster(object):
 
+    map_size = 100 * 1024 * 1024 * 1024 
+    
     def __init__(self, config_path='./config.json'):
         self.config = None
         
@@ -63,7 +64,7 @@ class OAHarverster(object):
         download in parallel PDF, generate thumbnails, upload resources on S3 and update
         the json description of the entries
         """
-        batch_size_pdf = self.config['nb_threads']
+        batch_size_pdf = self.config['batch_size']
         # batch size for lmdb commit
         batch_size_lmdb = 10 
         n = 0
@@ -79,6 +80,8 @@ class OAHarverster(object):
 
         gz = gzip.open(filepath, 'rt')
         for line in gz:
+            if n >= 1000:
+                break
             if n != 0 and n % batch_size_lmdb == 0:
                 txn.commit()
                 txn = self.env.begin(write=True)
@@ -125,6 +128,7 @@ class OAHarverster(object):
         # we need to process the latest incomplete batch (if not empty)
         if len(urls) >0:
             self.processBatch(urls, filenames, entries, txn, txn_doi, txn_fail)
+            n += len(urls)
 
         print("total entries:", n)
 
@@ -234,7 +238,7 @@ class OAHarverster(object):
         """
         Retry to access OA resources stored in the fail lmdb
         """
-        batch_size_pdf = self.config['nb_threads']
+        batch_size_pdf = self.config['batch_size']
         # batch size for lmdb commit
         batch_size_lmdb = 100 
         n = 0
@@ -333,6 +337,16 @@ class OAHarverster(object):
             if f.endswith(".pdf") or f.endswith(".png") :
                 os.remove(os.path.join(self.config["data_path"], f))
 
+    def diagnostic(self):
+        """
+        Print a report on failures stored during the harvesting process
+        """
+        txn = self.env.begin(write=True)
+        txn_fail = self.env_fail.begin(write=True)
+        nb_fails = txn_fail.stat()['entries']
+        nb_total = txn.stat()['entries']
+        print("number of failed entries with OA link:", nb_fails, "out of", nb_total, "entries")
+
 def _serialize_pickle(a):
     return pickle.dumps(a)
 
@@ -419,10 +433,17 @@ if __name__ == "__main__":
     if reset:
         harvester.reset()
 
+    start_time = time.time()
+
     if reprocess:
         harvester.reprocessFailed()
+        harvester.diagnostic()
     elif unpaywall is not None: 
         harvester.harvestUnpaywall(unpaywall)
+        harvester.diagnostic()
+
+    runtime = round(time.time() - start_time, 3)
+    print("runtime: %s seconds " % (runtime))
 
     if dump is not None:
         harvester.dump(dump)

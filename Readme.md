@@ -40,7 +40,7 @@ For generating thumbnails corresponding to the harvested PDF, ImageMagick must b
 
 > apt-get install imagemagick
 
-A configuration file must be completed, by default the file `config.json` will be used, but it is also possible to use it as a template and specifies a particular configuration file when using the tool. In the configuration file, the information related to the S3 bucket to be used for uploading the resources must be filed, otherwise the resources will be stored locally in the indicated `data_path`. `nb_threads` gives the number of threads that can be used for parallel downloading and processing of the files. 
+A configuration file must be completed, by default the file `config.json` will be used, but it is also possible to use it as a template and specifies a particular configuration file when using the tool. In the configuration file, the information related to the S3 bucket to be used for uploading the resources must be filed, otherwise the resources will be stored locally in the indicated `data_path`. `batch_size` gives the number of PDF that is considered for parallel downloading. 
 
 ```json
 {
@@ -48,7 +48,7 @@ A configuration file must be completed, by default the file `config.json` will b
     "aws_access_key_id": "",
     "aws_secret_access_key": "",
     "bucket_name": "",
-    "nb_threads": 10
+    "batch_size": 100
 }
 ```
 
@@ -99,7 +99,9 @@ Entries having a sucessful OA PDF link can be dumped in JSON with the following 
 > python3 OAHarvester.py --dump output.json
 ```
 
-Each entry having a successful OA link is present in the dump with the original JSON information as in the Unpaywall dataset, plus an UUID given by the attribute `id`.
+This dump is necessary for further usage and for accessing resources associated to an entry (listing million files directly with AWS S3 is by far too slow, we thus need a local index and a DB).
+
+In the JSON dump, each entry having a successful OA link is present in the dump with the original JSON information as in the Unpaywall dataset, plus an UUID given by the attribute `id`.
 
 ```json
 { 

@@ -4,5 +4,5 @@
     "aws_secret_access_key": "",
     "bucket_name": "",
     "region": "",
-    "nb_threads": 10
+    "batch_size": 100
 }
