@@ -14,13 +14,13 @@ import argparse
 import time
 import S3
 from concurrent.futures import ThreadPoolExecutor
+from streamexecutors import StreamThreadPoolExecutor
 import subprocess
 
+map_size = 100 * 1024 * 1024 * 1024 
 
 class OAHarverster(object):
 
-    map_size = 100 * 1024 * 1024 * 1024 
-    
     def __init__(self, config_path='./config.json'):
         self.config = None
         
