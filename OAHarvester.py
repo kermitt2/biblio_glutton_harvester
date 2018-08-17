@@ -5,7 +5,6 @@ import os
 import shutil
 import gzip
 import json
-#from pySmartDL import SmartDL
 import pickle
 import lmdb
 import uuid
@@ -14,7 +13,6 @@ import argparse
 import time
 import S3
 from concurrent.futures import ThreadPoolExecutor
-from streamexecutors import StreamThreadPoolExecutor
 import subprocess
 
 map_size = 100 * 1024 * 1024 * 1024 
@@ -135,14 +133,19 @@ class OAHarverster(object):
     def processBatch(self, urls, filenames, entries, txn, txn_doi, txn_fail):
         with ThreadPoolExecutor(max_workers=12) as executor:
             results = executor.map(download, urls, filenames, entries)
-            for result in results: 
+
+            # LMDB write transaction must be performed in the thread that created the transaction, so
+            # we need to have that out of the paralell process
+            entries = []
+            for result in results:
                 if result[0] is None or result[0] == "0":
                     print(" success")
                     local_entry = result[1]
                     #update DB
                     txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(local_entry))  
                     txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
-                    self.manageFiles(local_entry)
+                    #self.manageFiles(local_entry)
+                    entries.append(local_entry)
                 else:
                     print(" error: " + result[0])
                     local_entry = result[1]
@@ -154,6 +157,11 @@ class OAHarverster(object):
                     local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
                     if os.path.isfile(local_filename): 
                         os.remove(local_filename)
+
+            # finally we can parallelize the thumbnail/upload/file cleaning steps for this batch
+            with ThreadPoolExecutor(max_workers=12) as executor:
+                results = executor.map(self.manageFiles, entries)
+
 
     def processBatchReprocess(self, urls, filenames, entries, txn, txn_doi, txn_fail):
         with ThreadPoolExecutor(max_workers=12) as executor:

@@ -18,3 +18,4 @@ data/*.png
 my_config.json
 __pycache__
 doc/
+OAHarvesterStreaming.py
