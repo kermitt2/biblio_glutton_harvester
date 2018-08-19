@@ -17,6 +17,15 @@ import subprocess
 
 map_size = 100 * 1024 * 1024 * 1024 
 
+
+'''
+This version uses the standard ThreadPoolExecutor for parallelizing the download/processing/upload processes. 
+Given the limits of ThreadPoolExecutor (input stored in memory, blocking Executor.map until the whole input
+is processed and output stored in memory until all input is consumed), it works with batches of PDF of a size 
+indicated in the config.json file (default is 100 entries). We are moving from first batch to the second one 
+only when the first is entirely processed. 
+
+'''
 class OAHarverster(object):
 
     def __init__(self, config_path='./config.json'):
@@ -72,14 +81,15 @@ class OAHarverster(object):
         filenames = []
         
         # init lmdb transactions
-        txn = self.env.begin(write=True)
-        txn_doi = self.env_doi.begin(write=True)
-        txn_fail = self.env_fail.begin(write=True)
+        #txn = self.env.begin(write=True)
+        #txn_doi = self.env_doi.begin(write=True)
+        #txn_fail = self.env_fail.begin(write=True)
 
         gz = gzip.open(filepath, 'rt')
         for line in gz:
             if n >= 1000:
                 break
+            '''
             if n != 0 and n % batch_size_lmdb == 0:
                 txn.commit()
                 txn = self.env.begin(write=True)
@@ -89,9 +99,10 @@ class OAHarverster(object):
 
                 txn_fail.commit()
                 txn_fail = self.env_fail.begin(write=True)
+            '''
 
-            if i == batch_size_pdf-1:
-                self.processBatch(urls, filenames, entries, txn, txn_doi, txn_fail)
+            if i == batch_size_pdf:
+                self.processBatch(urls, filenames, entries)#, txn, txn_doi, txn_fail)
                 # reinit
                 i = 0
                 urls = []
@@ -125,62 +136,93 @@ class OAHarverster(object):
 
         # we need to process the latest incomplete batch (if not empty)
         if len(urls) >0:
-            self.processBatch(urls, filenames, entries, txn, txn_doi, txn_fail)
+            self.processBatch(urls, filenames, entries)#, txn, txn_doi, txn_fail)
             n += len(urls)
 
         print("total entries:", n)
 
-    def processBatch(self, urls, filenames, entries, txn, txn_doi, txn_fail):
+    def processBatch(self, urls, filenames, entries):#, txn, txn_doi, txn_fail):
         with ThreadPoolExecutor(max_workers=12) as executor:
             results = executor.map(download, urls, filenames, entries)
 
-            # LMDB write transaction must be performed in the thread that created the transaction, so
-            # we need to have that out of the paralell process
-            entries = []
-            for result in results:
-                if result[0] is None or result[0] == "0":
-                    print(" success")
-                    local_entry = result[1]
-                    #update DB
-                    txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(local_entry))  
-                    txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
-                    #self.manageFiles(local_entry)
-                    entries.append(local_entry)
-                else:
-                    print(" error: " + result[0])
-                    local_entry = result[1]
-                    #update DB
-                    txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(local_entry))  
-                    txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
-                    txn_fail.put(local_entry['id'].encode(encoding='UTF-8'), result[0].encode(encoding='UTF-8'))
-                    # if an empty pdf file is present, we clean it
-                    local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
-                    if os.path.isfile(local_filename): 
-                        os.remove(local_filename)
+        # LMDB write transaction must be performed in the thread that created the transaction, so
+        # we need to have that out of the paralell process
+        entries = []
+        for result in results:
+            if result[0] is None or result[0] == "0":
+                print(" success")
+                local_entry = result[1]
+                
+                #update DB
+                print(" update txn")
+                txn = self.env.begin(write=True)
+                print(" before put")
+                txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(local_entry)) 
+                print(" before commit")
+                txn.commit()
 
-            # finally we can parallelize the thumbnail/upload/file cleaning steps for this batch
-            with ThreadPoolExecutor(max_workers=12) as executor:
-                results = executor.map(self.manageFiles, entries)
+                print(" update txn_doi")
+                txn_doi = self.env_doi.begin(write=True)
+                txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
+                txn_doi.commit()
+
+                #self.manageFiles(local_entry)
+                entries.append(local_entry)
+            else:
+                print(" error: " + result[0])
+                local_entry = result[1]
+                
+                #update DB
+                txn = self.env.begin(write=True)
+                txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(local_entry))  
+                txn.commit()
+
+                txn_doi = self.env_doi.begin(write=True)
+                txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
+                txn_doi.commit()
+
+                txn_fail = self.env_fail.begin(write=True)
+                txn_fail.put(local_entry['id'].encode(encoding='UTF-8'), result[0].encode(encoding='UTF-8'))
+                txn_fail.commit()
+
+                # if an empty pdf file is present, we clean it
+                local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
+                if os.path.isfile(local_filename): 
+                    os.remove(local_filename)
+
+        # finally we can parallelize the thumbnail/upload/file cleaning steps for this batch
+        with ThreadPoolExecutor(max_workers=12) as executor:
+            results = executor.map(self.manageFiles, entries)
 
 
-    def processBatchReprocess(self, urls, filenames, entries, txn, txn_doi, txn_fail):
+    def processBatchReprocess(self, urls, filenames, entries):#, txn, txn_doi, txn_fail):
         with ThreadPoolExecutor(max_workers=12) as executor:
             results = executor.map(download, urls, filenames, entries)
-            for result in results: 
-                if result[0] is None or result[0] == "0":
-                    print(" success")
-                    local_entry = result[1]
-                    self.manageFiles(local_entry)
-                    # remove the entry in fail, as it is now sucessful
-                    txn_fail.delete(local_entry['id'].encode(encoding='UTF-8'))
-                else:
-                    print(" error: " + result[0])
-                    local_entry = result[1]
-                    #update DB
-                    # if an empty pdf file is present, we clean it
-                    local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
-                    if os.path.isfile(local_filename): 
-                        os.remove(local_filename)
+        
+        # LMDB write transactions in the thread that created the transaction
+        entries = []
+        for result in results: 
+            if result[0] is None or result[0] == "0":
+                print(" success")
+                local_entry = result[1]
+                entries.append(local_entry)
+                # remove the entry in fail, as it is now sucessful
+                with self.env_fail.begin(write=True) as txn_fail2:
+                    txn_fail2.delete(local_entry['id'].encode(encoding='UTF-8'))
+                    txn_fail2.commit()
+            else:
+                # still an error
+                print(" error: " + result[0])
+                local_entry = result[1]
+                # if an empty pdf file is present, we clean it
+                local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
+                if os.path.isfile(local_filename): 
+                    os.remove(local_filename)
+
+        # finally we can parallelize the thumbnail/upload/file cleaning steps for this batch
+        with ThreadPoolExecutor(max_workers=12) as executor:
+            results = executor.map(self.manageFiles, entries)
+
 
     def getUUIDByDoi(self, doi):
         txn = self.env_doi.begin()
@@ -257,7 +299,6 @@ class OAHarverster(object):
         
         # init lmdb transactions
         txn = self.env.begin(write=True)
-        txn_doi = self.env_doi.begin(write=True)
         txn_fail = self.env_fail.begin(write=True)
 
         nb_fails = txn_fail.stat()['entries']
@@ -265,20 +306,10 @@ class OAHarverster(object):
         print("number of failed entries with OA link:", nb_fails, "out of", nb_total, "entries")
 
         # iterate over the fail lmdb
-        cursor = txn_fail.cursor()
+        cursor = txn.cursor()
         for key, value in cursor:
-            if n != 0 and n % batch_size_lmdb == 0:
-                txn.commit()
-                txn = self.env.begin(write=True)
-
-                txn_doi.commit()
-                txn_doi = self.env_doi.begin(write=True)
-
-                txn_fail.commit()
-                txn_fail = self.env_fail.begin(write=True)
-
-            if i == batch_size_pdf-1:
-                self.processBatchReprocess(urls, filenames, entries, txn, txn_doi, txn_fail)
+            if i == batch_size_pdf:
+                self.processBatchReprocess(urls, filenames, entries)#, txn, txn_doi, txn_fail)
                 # reinit
                 i = 0
                 urls = []
@@ -286,10 +317,12 @@ class OAHarverster(object):
                 filenames = []
                 n += batch_size_pdf
 
-            if txn.get(key) is None:
-                continue
+            with self.env_fail.begin() as txn_f:
+                value_error = txn_f.get(key)
+                if value_error is None:
+                   continue
 
-            local_entry = _deserialize_pickle(txn.get(key))
+            local_entry = _deserialize_pickle(value)
             pdf_url = local_entry['best_oa_location']['url_for_pdf']  
             print(pdf_url)
             urls.append(pdf_url)
@@ -298,8 +331,8 @@ class OAHarverster(object):
             i += 1
 
         # we need to process the latest incomplete batch (if not empty)
-        if len(urls) >0:
-            self.processBatch(urls, filenames, entries, txn, txn_doi, txn_fail)
+        if len(urls)>0:
+            self.processBatchReprocess(urls, filenames, entries)#, txn, txn_doi, txn_fail)
 
     def dump(self, dump_file):
         # init lmdb transactions
@@ -362,10 +395,11 @@ def _deserialize_pickle(serialized):
     return pickle.loads(serialized)
 
 def download(url, filename, entry):
-    cmd = "wget -c --quiet" + " -O " + filename + ' --connect-timeout=10 --waitretry=10 ' + \
+    #cmd = "wget -c --quiet" + " -O " + filename + ' --connect-timeout=10 --waitretry=10 ' + \
+    cmd = "wget -c --quiet" + " -O " + filename + '  --timeout=2 --waitretry=0 --tries=5 --retry-connrefused ' + \
         '--header="User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/60.0" ' + \
         '--header="Accept: application/pdf, text/html;q=0.9,*/*;q=0.8" --header="Accept-Encoding: gzip, deflate" ' + \
-        url
+        '"' + url + '"'
         #'--header="Referer: https://www.google.com"' +
         #' --random-wait' +
     print(cmd)

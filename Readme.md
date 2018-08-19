@@ -16,7 +16,7 @@ Python utility for harvesting efficiently a large Open Access collection of PDF:
 
 ## Requirements
 
-The utility has been tested with Python 3.5. It is developed for a deployment on a POSIX/Linux server (it uses imagemagick as external process to generate thumbnails and wget). An S3 account and bucket must have been created for non-local storage of the data collection. 
+The utility has been tested with Python 3.5. It is developed for a deployment on a POSIX/Linux server (it uses `imagemagick` as external process to generate thumbnails and `wget`). An S3 account and bucket must have been created for non-local storage of the data collection. 
 
 ## Install
 
@@ -40,7 +40,7 @@ For generating thumbnails corresponding to the harvested PDF, ImageMagick must b
 
 > apt-get install imagemagick
 
-A configuration file must be completed, by default the file `config.json` will be used, but it is also possible to use it as a template and specifies a particular configuration file when using the tool. In the configuration file, the information related to the S3 bucket to be used for uploading the resources must be filed, otherwise the resources will be stored locally in the indicated `data_path`. `batch_size` gives the number of PDF that is considered for parallel downloading. 
+A configuration file must be completed, by default the file `config.json` will be used, but it is also possible to use it as a template and specifies a particular configuration file when using the tool. In the configuration file, the information related to the S3 bucket to be used for uploading the resources must be filed, otherwise the resources will be stored locally in the indicated `data_path`. `batch_size` gives the number of PDF that is considered for parallel process at the same time, the process will move to a new batch only when all the PDF of the previous batch will be processed.  
 
 ```json
 {
@@ -122,6 +122,14 @@ The UUID can then be used for accessing the resources for this entry, the prefix
 - thumbnail large (500px width): `1b/a0/cc/e3/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2-thumb-large.png`
 
 Depending on the config, the resources can be accessed either locally under `data_path` or on AWS S3 following the URL prefix: `https://bucket_name.s3.amazonaws.com/`, for instance `https://bucket_name.s3.amazonaws.com/1b/a0/cc/e3/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2.pdf` - if you have the appropriate access rights.
+
+<!---
+## Acknowledgement
+
+For fully streamed multithreaded version is based on the StreamThreadPoolExecutor of @pkch:
+
+https://github.com/pkch/stream_executors
+-->
 
 ## License and contact
 
