@@ -150,15 +150,11 @@ class OAHarverster(object):
         entries = []
         for result in results:
             if result[0] is None or result[0] == "0":
-                print(" success")
                 local_entry = result[1]
                 
                 #update DB
-                print(" update txn")
                 txn = self.env.begin(write=True)
-                print(" before put")
                 txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(local_entry)) 
-                print(" before commit")
                 txn.commit()
 
                 print(" update txn_doi")
@@ -203,7 +199,6 @@ class OAHarverster(object):
         entries = []
         for result in results: 
             if result[0] is None or result[0] == "0":
-                print(" success")
                 local_entry = result[1]
                 entries.append(local_entry)
                 # remove the entry in fail, as it is now sucessful
@@ -212,7 +207,6 @@ class OAHarverster(object):
                     txn_fail2.commit()
             else:
                 # still an error
-                print(" error: " + result[0])
                 local_entry = result[1]
                 # if an empty pdf file is present, we clean it
                 local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
@@ -242,16 +236,16 @@ class OAHarverster(object):
             # upload to S3 
             # upload is already in parallel for individual file (with parts)
             # so we don't further upload in parallel at the level of the files
-            self.s3.upload_file_to_s3(local_filename, dest_path)
+            self.s3.upload_file_to_s3(local_filename, dest_path, storage_class='ONEZONE_IA')
             
             if os.path.isfile(thumb_file_small):
-                self.s3.upload_file_to_s3(thumb_file_small, dest_path)
+                self.s3.upload_file_to_s3(thumb_file_small, dest_path, storage_class='ONEZONE_IA')
 
             if os.path.isfile(thumb_file_medium): 
-                self.s3.upload_file_to_s3(thumb_file_medium, dest_path)
+                self.s3.upload_file_to_s3(thumb_file_medium, dest_path, storage_class='ONEZONE_IA')
             
             if os.path.isfile(thumb_file_large): 
-                self.s3.upload_file_to_s3(thumb_file_large, dest_path)
+                self.s3.upload_file_to_s3(thumb_file_large, dest_path, storage_class='ONEZONE_IA')
         else:
             # save under local storate indicated by data_path in the config json
             try:

@@ -20,10 +20,12 @@ class S3(object):
                             aws_access_key_id=self.config['aws_access_key_id'],
                             aws_secret_access_key=self.config['aws_secret_access_key'])
 
-    def upload_file_to_s3(self, file_path, dest_path=None):
+    def upload_file_to_s3(self, file_path, dest_path=None, storage_class='STANDARD_IA'):
         """
         Upload given file to s3 using a managed uploader, which will split up large
-        files automatically and upload parts in parallel
+        files automatically and upload parts in parallel.
+        By default, files are stored with the class standard infrequent access. 
+        Possible storage classes are: STANDARD, STANDARD_IA, REDUCED_REDUNDANCY or ONEZONE_IA
         """
         s3_client = self.conn
         file_name = file_path.split('/')[-1]
@@ -34,14 +36,16 @@ class S3(object):
                 full_path = dest_path + "/" + file_name
         else:
             full_path = file_name
-        s3_client.upload_file(file_path, self.bucket_name, full_path)
+        s3_client.upload_file(file_path, self.bucket_name, full_path, ExtraArgs={"Metadata": {"StorageClass": storage_class}})
 
-    def upload_object(self, body, s3_key):
+    def upload_object(self, body, s3_key, storage_class='STANDARD_IA'):
         """
-        Upload object to s3 key
+        Upload object to s3 key.
+        By default, files are stored with the class standard infrequent access. 
+        Possible storage classes are: STANDARD, STANDARD_IA, REDUCED_REDUNDANCY or ONEZONE_IA
         """
         s3_client = self.conn
-        return s3_client.put_object(Body=body, Key=s3_key)
+        return s3_client.put_object(Body=body, Key=s3_key, ExtraArgs={"Metadata": {"StorageClass": storage_class}})
 
     def download_file(self, file_path, dest_path):
         """
