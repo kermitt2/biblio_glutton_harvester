@@ -15,8 +15,11 @@ import S3
 from concurrent.futures import ThreadPoolExecutor
 import subprocess
 
-map_size = 100 * 1024 * 1024 * 1024 
+import numpy
+import math
 
+map_size = 100 * 1024 * 1024 * 1024 
+shuffle_size = math.pow(10, 6) # we will consider 1million entry for the shuffle, but there are more
 
 '''
 This version uses the standard ThreadPoolExecutor for parallelizing the download/processing/upload processes. 
@@ -84,9 +87,14 @@ class OAHarverster(object):
         #txn = self.env.begin(write=True)
         #txn_doi = self.env_doi.begin(write=True)
         #txn_fail = self.env_fail.begin(write=True)
-
+        X = numpy.random.randint(0, shuffle_size, size=1000) # for example we harvest 1000 entry
         gz = gzip.open(filepath, 'rt')
         for line in gz:
+            if j not in X:
+                j += 1
+                continue
+            j += 1
+            
             if n >= 1000:
                 break
             '''
