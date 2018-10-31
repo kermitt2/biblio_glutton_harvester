@@ -91,19 +91,20 @@ class OAHarverster(object):
         X = numpy.random.randint(0, shuffle_range, size=batch_size_pdf)# for example we harvest 1000 entry
         gz = gzip.open(filepath, 'rt')
         for line in gz:
-            
+
             if j >= shuffle_range:
                 # new shuffle
                 j = 0
                 X = numpy.random.randint(0, shuffle_range, size=batch_size_pdf)
-                
+
             if j not in X:
                 j += 1
                 continue
             j += 1
-            
-            if n >= 1000:
-                break
+
+            if self.config['size'] is not None:
+                if n + i >= self.config['size']:
+                    break
             '''
             if n != 0 and n % batch_size_lmdb == 0:
                 txn.commit()

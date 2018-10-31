@@ -40,7 +40,7 @@ For generating thumbnails corresponding to the harvested PDF, ImageMagick must b
 
 > apt-get install imagemagick
 
-A configuration file must be completed, by default the file `config.json` will be used, but it is also possible to use it as a template and specifies a particular configuration file when using the tool. In the configuration file, the information related to the S3 bucket to be used for uploading the resources must be filed, otherwise the resources will be stored locally in the indicated `data_path`. `batch_size` gives the number of PDF that is considered for parallel process at the same time, the process will move to a new batch only when all the PDF of the previous batch will be processed.  
+A configuration file must be completed, by default the file `config.json` will be used, but it is also possible to use it as a template and specifies a particular configuration file when using the tool. In the configuration file, the information related to the S3 bucket to be used for uploading the resources must be filed, otherwise the resources will be stored locally in the indicated `data_path`. `batch_size` gives the number of PDF that is considered for parallel process at the same time, the process will move to a new batch only when all the PDF of the previous batch will be processed. `size` is the number of PDFs to be downloaded.
 
 ```json
 {
@@ -48,7 +48,8 @@ A configuration file must be completed, by default the file `config.json` will b
     "aws_access_key_id": "",
     "aws_secret_access_key": "",
     "bucket_name": "",
-    "batch_size": 100
+    "batch_size": 100,
+    "size":10
 }
 ```
 
