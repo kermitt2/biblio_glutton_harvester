@@ -79,6 +79,7 @@ class OAHarverster(object):
         batch_size_lmdb = 10 
         n = 0
         i = 0
+        j = 0
         urls = []
         entries = []
         filenames = []
