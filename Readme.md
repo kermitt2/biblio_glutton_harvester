@@ -81,6 +81,12 @@ For processing all entries of an Unpaywall snapshot:
 > python3 OAHarvester.py --unpaywall /mnt/data/biblio/unpaywall_snapshot_2018-06-21T164548_with_versions.jsonl.gz
 ```
 
+By default, `./config.json` is used, but you can pass a specific config with the `--config` option:
+
+```bash
+> python3 OAHarvester.py --config ./my_config.json --unpaywall /mnt/data/biblio/unpaywall_snapshot_2018-06-21T164548_with_versions.jsonl.gz
+```
+
 If the process is interrupted, relaunching the above command will resume the process at the interruption point. For re-starting the process from the beginning, and removing existing local information about the state of process, use the parameter `--reset`:
 
 ```bash
@@ -130,6 +136,16 @@ For fully streamed multithreaded version is based on the StreamThreadPoolExecuto
 
 https://github.com/pkch/stream_executors
 -->
+
+## Troubleshooting with imagemagick
+
+Recent update (end of October 2018) of imagemagick is breaking the normal convertion usage. Basically the converter does not convert by default for security reason related to server usage. For non-server mode as involved in our module, it is not a problem to allow PDF convertion. For this, simply edit the file 
+` /etc/ImageMagick-6/policy.xml` and put into comment the following line: 
+
+```
+<!-- <policy domain="coder" rights="none" pattern="PDF" /> -->
+```
+
 
 ## License and contact
 

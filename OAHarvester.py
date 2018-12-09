@@ -87,8 +87,8 @@ class OAHarverster(object):
 
         gz = gzip.open(filepath, 'rt')
         for line in gz:
-            if n >= 1000:
-                break
+            #if n >= 10:
+            #    break
             '''
             if n != 0 and n % batch_size_lmdb == 0:
                 txn.commit()
@@ -342,6 +342,7 @@ class OAHarverster(object):
                 if txn.get(key) is None:
                     continue
                 local_entry = _deserialize_pickle(txn.get(key))
+                local_entry["id"] = key.decode(encoding='UTF-8');
                 file_out.write(json.dumps(local_entry))
                 file_out.write("\n")
 
@@ -454,7 +455,7 @@ if __name__ == "__main__":
     parser.add_argument("--dump", default="dump.json", help="Write all JSON entries having a sucessful OA link with their UUID") 
     parser.add_argument("--reprocess", action="store_true", help="Reprocessed failed entries with OA link") 
     parser.add_argument("--reset", action="store_true", help="Ignore previous processing states, and re-init the harvesting process from the beginning") 
-    
+    parser.add_argument("--increment", action="store_true", help="Augment an existing harvesting with a new released Unpaywall dataset (gzipped)") 
     
     args = parser.parse_args()
 
