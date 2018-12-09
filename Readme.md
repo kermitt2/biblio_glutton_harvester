@@ -139,7 +139,7 @@ https://github.com/pkch/stream_executors
 
 ## Troubleshooting with imagemagick
 
-Recent update (end of October 2018) of imagemagick is breaking the normal convertion usage. Basically the converter does not convert by default for security reason related to server usage. For non-server mode as involved in our module, it is not a problem to allow PDF convertion. For this, simply edit the file 
+Recent update (end of October 2018) of imagemagick is breaking the normal conversion usage. Basically the converter does not convert by default for security reason related to server usage. For non-server mode as involved in our module, it is not a problem to allow PDF conversion. For this, simply edit the file 
 ` /etc/ImageMagick-6/policy.xml` and put into comment the following line: 
 
 ```
