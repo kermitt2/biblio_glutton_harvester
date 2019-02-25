@@ -31,8 +31,10 @@ only when the first is entirely processed.
 '''
 class OAHarverster(object):
 
-    def __init__(self, config_path='./config.json'):
+    def __init__(self, config_path='./config.json', size = 2000):
         self.config = None
+
+        self.size = size
         
         # standard lmdb environment for storing biblio entries by uuid
         self.env = None
@@ -101,8 +103,8 @@ class OAHarverster(object):
                 continue
             j += 1
 
-            if self.config['size'] is not None:
-                if n + i >= self.config['size']:
+            if self.size is not None:
+                if n + i >= self.size:
                     break
             '''
             if n != 0 and n % batch_size_lmdb == 0:
@@ -470,7 +472,8 @@ if __name__ == "__main__":
     parser.add_argument("--dump", default="dump.json", help="Write all JSON entries having a sucessful OA link with their UUID") 
     parser.add_argument("--reprocess", action="store_true", help="Reprocessed failed entries with OA link") 
     parser.add_argument("--reset", action="store_true", help="Ignore previous processing states, and re-init the harvesting process from the beginning") 
-    parser.add_argument("--increment", action="store_true", help="Augment an existing harvesting with a new released Unpaywall dataset (gzipped)") 
+    parser.add_argument("--increment", action="store_true", help="Augment an existing harvesting with a new released Unpaywall dataset (gzipped)")
+    parser.add_argument("--size", default=2000, help="The number of documents to be downloaded.")
     
     args = parser.parse_args()
 
@@ -479,8 +482,9 @@ if __name__ == "__main__":
     reprocess = args.reprocess
     reset = args.reset
     dump = args.dump
+    size = args.size
 
-    harvester = OAHarverster(config_path=config_path)
+    harvester = OAHarverster(config_path=config_path, size = size)
 
     if reset:
         harvester.reset()
