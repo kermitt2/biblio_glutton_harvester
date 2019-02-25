@@ -488,7 +488,7 @@ if __name__ == "__main__":
     reprocess = args.reprocess
     reset = args.reset
     dump = args.dump
-    size = args.size
+    size = int(args.size)
 
     harvester = OAHarverster(config_path=config_path, size = size)
 
