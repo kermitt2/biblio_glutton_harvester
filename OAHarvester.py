@@ -62,12 +62,18 @@ class OAHarverster(object):
     def _init_lmdb(self):
         # open in write mode
         envFilePath = os.path.join(self.config["data_path"], 'entries')
+        if not os.path.exists(envFilePath):
+            os.makedirs(envFilePath)
         self.env = lmdb.open(envFilePath, map_size=map_size)
 
         envFilePath = os.path.join(self.config["data_path"], 'doi')
+        if not os.path.exists(envFilePath):
+            os.makedirs(envFilePath)
         self.env_doi = lmdb.open(envFilePath, map_size=map_size)
 
         envFilePath = os.path.join(self.config["data_path"], 'fail')
+        if not os.path.exists(envFilePath):
+            os.makedirs(envFilePath)
         self.env_fail = lmdb.open(envFilePath, map_size=map_size)
 
     def harvestUnpaywall(self, filepath):   
