@@ -125,7 +125,7 @@ class OAHarverster(object):
             '''
 
             if i == batch_size_pdf:
-                self.processBatch(urls, filenames, entries)#, txn, txn_doi, txn_fail)
+                failed = self.processBatch(urls, filenames, entries)#, txn, txn_doi, txn_fail)
                 # reinit
                 i = 0
                 urls = []
@@ -171,6 +171,7 @@ class OAHarverster(object):
         # LMDB write transaction must be performed in the thread that created the transaction, so
         # we need to have that out of the paralell process
         entries = []
+        i = 0
         for result in results:
             if result[0] is None or result[0] == "0":
                 local_entry = result[1]
@@ -208,10 +209,14 @@ class OAHarverster(object):
                 local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
                 if os.path.isfile(local_filename): 
                     os.remove(local_filename)
+                i = i+1
 
+        print("failed documents :", i)
         # finally we can parallelize the thumbnail/upload/file cleaning steps for this batch
-        with ThreadPoolExecutor(max_workers=12) as executor:
-            results = executor.map(self.manageFiles, entries)
+        # with ThreadPoolExecutor(max_workers=12) as executor:
+        #     results = executor.map(self.manageFiles, entries)
+
+        return i
 
 
     def processBatchReprocess(self, urls, filenames, entries):#, txn, txn_doi, txn_fail):
@@ -420,6 +425,13 @@ def download(url, filename, entry):
         '"' + url + '"'
         #'--header="Referer: https://www.google.com"' +
         #' --random-wait' +
+
+    # Check pdf integrity
+    pdftotext = shutil.which('pdftotext');
+    if pdftotext is not None:
+        print("Found pdftotext executable : " + pdftotext)
+        cmd += "; " + pdftotext + " " + filename
+
     print(cmd)
     try:
         result = subprocess.check_call(cmd, shell=True)
