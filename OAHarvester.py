@@ -14,6 +14,7 @@ import time
 import S3
 from concurrent.futures import ThreadPoolExecutor
 import subprocess
+import  tarfile
 
 map_size = 100 * 1024 * 1024 * 1024 
 
@@ -28,19 +29,20 @@ only when the first is entirely processed.
 '''
 class OAHarverster(object):
 
-    def __init__(self, config_path='./config.json'):
+    def __init__(self, config_path='./config.json', thumbnail=False):
         self.config = None
         
         # standard lmdb environment for storing biblio entries by uuid
         self.env = None
 
-        # lmdb environment for storing mapping between doi and uuid
+        # lmdb environment for storing mapping between doi/pmcid and uuid
         self.env_doi = None
 
         # lmdb environment for keeping track of failures
         self.env_fail = None
 
         self._load_config(config_path)
+        self.thumbnail = thumbnail
         self._init_lmdb()
 
         self.s3 = None
@@ -79,28 +81,11 @@ class OAHarverster(object):
         urls = []
         entries = []
         filenames = []
-        
-        # init lmdb transactions
-        #txn = self.env.begin(write=True)
-        #txn_doi = self.env_doi.begin(write=True)
-        #txn_fail = self.env_fail.begin(write=True)
 
         gz = gzip.open(filepath, 'rt')
         for line in gz:
             #if n >= 10:
             #    break
-            '''
-            if n != 0 and n % batch_size_lmdb == 0:
-                txn.commit()
-                txn = self.env.begin(write=True)
-
-                txn_doi.commit()
-                txn_doi = self.env_doi.begin(write=True)
-
-                txn_fail.commit()
-                txn_fail = self.env_fail.begin(write=True)
-            '''
-
             if i == batch_size_pdf:
                 self.processBatch(urls, filenames, entries)#, txn, txn_doi, txn_fail)
                 # reinit
@@ -122,7 +107,6 @@ class OAHarverster(object):
                 if entry['best_oa_location'] is not None:
                     if 'url_for_pdf' in entry['best_oa_location']:
                         pdf_url = entry['best_oa_location']['url_for_pdf']
-                        #if pdf_url is not None and pdf_url.endswith('.pdf'):
                         if pdf_url is not None:    
                             print(pdf_url)
                             urls.append(pdf_url)
@@ -141,48 +125,131 @@ class OAHarverster(object):
 
         print("total entries:", n)
 
+    def harvestPMC(self, filepath):   
+        """
+        Main method for PMC, use the provided PMC list file for getting pdf url for Open Access resources, 
+        or download the list file on NIH server if not provided, download in parallel PDF, generate thumbnails, 
+        upload resources on S3 and update the json description of the entries
+        """
+        batch_size_pdf = self.config['batch_size']
+        pmc_base = self.config['pmc_base']
+        # batch size for lmdb commit
+        batch_size_lmdb = 10 
+        n = 0
+        i = 0
+        urls = []
+        entries = []
+        filenames = []
+
+        with open(filepath, 'r') as fp:  
+            for count, line in enumerate(fp):
+                # skip first line which gives the date when the list has been generated
+                if count == 0:
+                    continue
+                #if n >= 100:
+                #    break
+                if i == batch_size_pdf:
+                    self.processBatch(urls, filenames, entries)#, txn, txn_doi, txn_fail)
+                    # reinit
+                    i = 0
+                    urls = []
+                    entries = []
+                    filenames = []
+                    n += batch_size_pdf
+
+                # one PMC entry per line
+                tokens = line.split('\t')
+                subpath = tokens[0]
+                pmcid = tokens[2]
+                pmid = tokens[3]
+                ind = pmid.find(":")
+                if ind != -1:
+                    pmid = pmid[ind+1:]
+                
+                if pmcid is None:
+                    continue
+
+                # check if the entry has already been processed
+                if self.getUUIDByDoi(pmcid) is not None:
+                    continue
+
+                if subpath is not None:
+                    entry = {}
+                    tar_url = pmc_base + subpath
+                    print(tar_url)
+                    urls.append(tar_url)
+
+                    entry['id'] = str(uuid.uuid4())
+                    entry['pmcid'] = pmcid
+                    entry['pmid'] = pmid
+                    entry['doi'] = pmcid
+                    entry_url = {}
+                    entry_url['url_for_pdf'] = tar_url
+                    entry['best_oa_location'] = entry_url
+                    entries.append(entry)
+                    filenames.append(os.path.join(self.config["data_path"], entry['id']+".tar.gz"))
+                    i += 1
+            
+        # we need to process the latest incomplete batch (if not empty)
+        if len(urls) >0:
+            self.processBatch(urls, filenames, entries)#, txn, txn_doi, txn_fail)
+            n += len(urls)
+
+        print("total entries:", n)
+
     def processBatch(self, urls, filenames, entries):#, txn, txn_doi, txn_fail):
         with ThreadPoolExecutor(max_workers=12) as executor:
             results = executor.map(download, urls, filenames, entries)
 
         # LMDB write transaction must be performed in the thread that created the transaction, so
-        # we need to have that out of the paralell process
+        # we need to have the following lmdb updates out of the paralell process
         entries = []
         for result in results:
-            if result[0] is None or result[0] == "0":
-                local_entry = result[1]
-                
+            local_entry = result[1]
+            # conservative check if the downloaded file is of size 0 with a status code sucessful (code: 0),
+            # it should not happen *in theory*
+            empty_file = False
+            local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
+            if os.path.isfile(local_filename): 
+                if os.path.getsize(local_filename) == 0:
+                    empty_file = True
+            
+            local_filename = os.path.join(self.config["data_path"], local_entry['id']+".tar.gz")
+            if os.path.isfile(local_filename): 
+                if os.path.getsize(local_filename) == 0:
+                    empty_file = True
+
+            if result[0] is None or result[0] == "0" and not empty_file:
                 #update DB
-                txn = self.env.begin(write=True)
-                txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(local_entry)) 
-                txn.commit()
+                with self.env.begin(write=True) as txn:
+                    txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(local_entry)) 
 
-                print(" update txn_doi")
-                txn_doi = self.env_doi.begin(write=True)
-                txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
-                txn_doi.commit()
+                #print(" update txn_doi")
+                with self.env_doi.begin(write=True) as txn_doi:
+                    txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
 
-                #self.manageFiles(local_entry)
                 entries.append(local_entry)
             else:
                 print(" error: " + result[0])
-                local_entry = result[1]
                 
                 #update DB
-                txn = self.env.begin(write=True)
-                txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(local_entry))  
-                txn.commit()
+                with self.env.begin(write=True) as txn:
+                    txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(local_entry))  
 
-                txn_doi = self.env_doi.begin(write=True)
-                txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
-                txn_doi.commit()
+                with self.env_doi.begin(write=True) as txn_doi:
+                    txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
 
-                txn_fail = self.env_fail.begin(write=True)
-                txn_fail.put(local_entry['id'].encode(encoding='UTF-8'), result[0].encode(encoding='UTF-8'))
-                txn_fail.commit()
+                with self.env_fail.begin(write=True) as txn_fail:
+                    txn_fail.put(local_entry['id'].encode(encoding='UTF-8'), result[0].encode(encoding='UTF-8'))
 
-                # if an empty pdf file is present, we clean it
+                # if an empty pdf or tar file is present, we clean it
                 local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
+                if os.path.isfile(local_filename): 
+                    os.remove(local_filename)
+                local_filename = os.path.join(self.config["data_path"], local_entry['id']+".tar.gz")
+                if os.path.isfile(local_filename): 
+                    os.remove(local_filename)
+                local_filename = os.path.join(self.config["data_path"], local_entry['id']+".nxml")
                 if os.path.isfile(local_filename): 
                     os.remove(local_filename)
 
@@ -198,21 +265,26 @@ class OAHarverster(object):
         # LMDB write transactions in the thread that created the transaction
         entries = []
         for result in results: 
+            local_entry = result[1]
             if result[0] is None or result[0] == "0":
-                local_entry = result[1]
                 entries.append(local_entry)
                 # remove the entry in fail, as it is now sucessful
                 with self.env_fail.begin(write=True) as txn_fail2:
                     txn_fail2.delete(local_entry['id'].encode(encoding='UTF-8'))
-                    txn_fail2.commit()
             else:
                 # still an error
-                local_entry = result[1]
                 # if an empty pdf file is present, we clean it
                 local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
                 if os.path.isfile(local_filename): 
                     os.remove(local_filename)
+                local_filename = os.path.join(self.config["data_path"], local_entry['id']+".tar.gz")
+                if os.path.isfile(local_filename): 
+                    os.remove(local_filename)
+                local_filename = os.path.join(self.config["data_path"], local_entry['id']+".nxml")
+                if os.path.isfile(local_filename): 
+                    os.remove(local_filename)
 
+        print("manage files")
         # finally we can parallelize the thumbnail/upload/file cleaning steps for this batch
         with ThreadPoolExecutor(max_workers=12) as executor:
             results = executor.map(self.manageFiles, entries)
@@ -224,8 +296,11 @@ class OAHarverster(object):
 
     def manageFiles(self, local_entry):
         local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
+        local_filename_nxml = os.path.join(self.config["data_path"], local_entry['id']+".nxml")
+
         # generate thumbnails
-        generate_thumbnail(local_filename)
+        if self.thumbnail:
+            generate_thumbnail(local_filename)
         
         dest_path = generateS3Path(local_entry['id'])
         thumb_file_small = local_filename.replace('.pdf', '-thumb-small.png')
@@ -236,44 +311,56 @@ class OAHarverster(object):
             # upload to S3 
             # upload is already in parallel for individual file (with parts)
             # so we don't further upload in parallel at the level of the files
-            self.s3.upload_file_to_s3(local_filename, dest_path, storage_class='ONEZONE_IA')
-            
-            if os.path.isfile(thumb_file_small):
-                self.s3.upload_file_to_s3(thumb_file_small, dest_path, storage_class='ONEZONE_IA')
+            if os.path.isfile(local_filename):
+                self.s3.upload_file_to_s3(local_filename, dest_path, storage_class='ONEZONE_IA')
+            if os.path.isfile(local_filename_nxml):
+                self.s3.upload_file_to_s3(local_filename_nxml, dest_path, storage_class='ONEZONE_IA')
 
-            if os.path.isfile(thumb_file_medium): 
-                self.s3.upload_file_to_s3(thumb_file_medium, dest_path, storage_class='ONEZONE_IA')
-            
-            if os.path.isfile(thumb_file_large): 
-                self.s3.upload_file_to_s3(thumb_file_large, dest_path, storage_class='ONEZONE_IA')
+            if (self.thumbnail):
+                if os.path.isfile(thumb_file_small):
+                    self.s3.upload_file_to_s3(thumb_file_small, dest_path, storage_class='ONEZONE_IA')
+
+                if os.path.isfile(thumb_file_medium): 
+                    self.s3.upload_file_to_s3(thumb_file_medium, dest_path, storage_class='ONEZONE_IA')
+                
+                if os.path.isfile(thumb_file_large): 
+                    self.s3.upload_file_to_s3(thumb_file_large, dest_path, storage_class='ONEZONE_IA')
         else:
             # save under local storate indicated by data_path in the config json
             try:
                 local_dest_path = os.path.join(self.config["data_path"], dest_path)
                 os.makedirs(os.path.dirname(local_dest_path), exist_ok=True)
-                shutil.copyfile(local_filename, os.path.join(local_dest_path, local_entry['id']+".pdf"))
+                if os.path.isfile(local_filename):
+                    shutil.copyfile(local_filename, os.path.join(local_dest_path, local_entry['id']+".pdf"))
+                if os.path.isfile(local_filename_nxml):
+                    shutil.copyfile(local_filename_nxml, os.path.join(local_dest_path, local_entry['id']+".nxml"))
 
-                thumb_file_small = local_filename.replace('.pdf', '-thumb-small.png')
-                shutil.copyfile(thumb_file_small, os.path.join(local_dest_path, local_entry['id']+"-thumb-small.png"))
+                if (self.thumbnail):
+                    if os.path.isfile(thumb_file_small):
+                        shutil.copyfile(thumb_file_small, os.path.join(local_dest_path, local_entry['id']+"-thumb-small.png"))
 
-                thumb_file_medium = local_filename.replace('.pdf', '-thumb-medium.png')
-                shutil.copyfile(thumb_file_medium, os.path.join(local_dest_path, local_entry['id']+"-thumb-medium.png"))
+                    if os.path.isfile(thumb_file_medium):
+                        shutil.copyfile(thumb_file_medium, os.path.join(local_dest_path, local_entry['id']+"-thumb-medium.png"))
 
-                thumb_file_large = local_filename.replace('.pdf', '-thumb-large.png')
-                shutil.copyfile(thumb_file_large, os.path.join(local_dest_path, local_entry['id']+"-thumb-larger.png"))
+                    if os.path.isfile(thumb_file_large):
+                        shutil.copyfile(thumb_file_large, os.path.join(local_dest_path, local_entry['id']+"-thumb-larger.png"))
 
             except IOError as e:
                 print("invalid path", str(e))       
 
         # clean pdf and thumbnail files
         try:
-            os.remove(local_filename)
-            if os.path.isfile(thumb_file_small): 
-                os.remove(thumb_file_small)
-            if os.path.isfile(thumb_file_medium): 
-                os.remove(thumb_file_medium)
-            if os.path.isfile(thumb_file_large): 
-                os.remove(thumb_file_large)
+            if os.path.isfile(local_filename):
+                os.remove(local_filename)
+            if os.path.isfile(local_filename_nxml):
+                os.remove(local_filename_nxml)
+            if (self.thumbnail):
+                if os.path.isfile(thumb_file_small): 
+                    os.remove(thumb_file_small)
+                if os.path.isfile(thumb_file_medium): 
+                    os.remove(thumb_file_medium)
+                if os.path.isfile(thumb_file_large): 
+                    os.remove(thumb_file_large)
         except IOError as e:
             print("temporary file cleaning failed:", str(e))       
 
@@ -291,38 +378,42 @@ class OAHarverster(object):
         entries = []
         filenames = []
         
-        # init lmdb transactions
-        txn = self.env.begin(write=True)
-        txn_fail = self.env_fail.begin(write=True)
+        with self.env.begin(write=True) as txn:
+            nb_total = txn.stat()['entries']
 
-        nb_fails = txn_fail.stat()['entries']
-        nb_total = txn.stat()['entries']
+        with self.env_fail.begin(write=True) as txn_fail:
+            nb_fails = txn_fail.stat()['entries']
+        
         print("number of failed entries with OA link:", nb_fails, "out of", nb_total, "entries")
 
         # iterate over the fail lmdb
-        cursor = txn.cursor()
-        for key, value in cursor:
-            if i == batch_size_pdf:
-                self.processBatchReprocess(urls, filenames, entries)#, txn, txn_doi, txn_fail)
-                # reinit
-                i = 0
-                urls = []
-                entries = []
-                filenames = []
-                n += batch_size_pdf
+        with self.env.begin(write=True) as txn:
+            cursor = txn.cursor()
+            for key, value in cursor:
+                if i == batch_size_pdf:
+                    self.processBatchReprocess(urls, filenames, entries)#, txn, txn_doi, txn_fail)
+                    # reinit
+                    i = 0
+                    urls = []
+                    entries = []
+                    filenames = []
+                    n += batch_size_pdf
 
-            with self.env_fail.begin() as txn_f:
-                value_error = txn_f.get(key)
-                if value_error is None:
-                   continue
+                with self.env_fail.begin() as txn_f:
+                    value_error = txn_f.get(key)
+                    if value_error is None:
+                       continue
 
-            local_entry = _deserialize_pickle(value)
-            pdf_url = local_entry['best_oa_location']['url_for_pdf']  
-            print(pdf_url)
-            urls.append(pdf_url)
-            entries.append(local_entry)
-            filenames.append(os.path.join(self.config["data_path"], local_entry['id']+".pdf"))
-            i += 1
+                local_entry = _deserialize_pickle(value)
+                pdf_url = local_entry['best_oa_location']['url_for_pdf']  
+                print(pdf_url)
+                urls.append(pdf_url)
+                entries.append(local_entry)
+                if pdf_url.endswith(".tar.gz"):
+                    filenames.append(os.path.join(self.config["data_path"], local_entry['id']+".tar.gz"))
+                else:  
+                    filenames.append(os.path.join(self.config["data_path"], local_entry['id']+".pdf"))
+                i += 1
 
         # we need to process the latest incomplete batch (if not empty)
         if len(urls)>0:
@@ -370,7 +461,7 @@ class OAHarverster(object):
 
         # clean any possibly remaining tmp files (.pdf and .png)
         for f in os.listdir(self.config["data_path"]):
-            if f.endswith(".pdf") or f.endswith(".png") :
+            if f.endswith(".pdf") or f.endswith(".png") or f.endswith(".nxml") or f.endswith(".tar.gz"):
                 os.remove(os.path.join(self.config["data_path"], f))
 
     def diagnostic(self):
@@ -397,19 +488,49 @@ def download(url, filename, entry):
         '"' + url + '"'
         #'--header="Referer: https://www.google.com"' +
         #' --random-wait' +
-    print(cmd)
+    #print(cmd)
     try:
         result = subprocess.check_call(cmd, shell=True)
+        #print("result:", result)
+        # check if finename exists
+        if filename.endswith(".tar.gz") and os.path.isfile(filename):
+            # for PMC we still have to extract the PDF from archive
+            #print(filename, "is an archive")
+            thedir = os.path.dirname(filename)
+            # we need to extract the PDF, the NLM extra file, change file name and remove the tar file
+            tar = tarfile.open(filename)
+            pdf_found = False
+            for member in tar.getmembers():
+                if not pdf_found and member.isfile() and (member.name.endswith(".pdf") or member.name.endswith(".PDF")):
+                    member.name = os.path.basename(member.name)
+                    f = tar.extract(member, path=thedir)
+                    #print("extracted file:", member.name)
+                    os.rename(os.path.join(thedir,member.name), filename.replace(".tar.gz", ".pdf"))
+                    pdf_found = True
+                    #break
+                if member.isfile() and member.name.endswith(".nxml"):
+                    member.name = os.path.basename(member.name)
+                    f = tar.extract(member, path=thedir)
+                    #print("extracted file:", member.name)
+                    os.rename(os.path.join(thedir,member.name), filename.replace(".tar.gz", ".nxml"))
+            tar.close()
+            if not pdf_found:
+                print("warning: no pdf found in archive:", filename)
+            if os.path.isfile(filename):
+                os.remove(filename)
+
     except subprocess.CalledProcessError as e:   
         print("e.returncode", e.returncode)
         print("e.output", e.output)
-        if  e.output is not None and e.output.startswith('error: {'):
+        #if e.output is not None and e.output.startswith('error: {'):
+        if  e.output is not None:
             error = json.loads(e.output[7:]) # Skip "error: "
             print("error code:", error['code'])
             print("error message:", error['message'])
             result = error['message']
         else:
             result = e.returncode
+
     return str(result), entry
 
 def generate_thumbnail(pdfFile):
@@ -451,21 +572,25 @@ def test():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = "OA PDF harvester")
     parser.add_argument("--unpaywall", default=None, help="path to the Unpaywall dataset (gzipped)") 
+    parser.add_argument("--pmc", default=None, help="path to the pmc file list, as available on NIH's site") 
     parser.add_argument("--config", default="./config.json", help="path to the config file, default is ./config.json") 
-    parser.add_argument("--dump", default="dump.json", help="Write all JSON entries having a sucessful OA link with their UUID") 
-    parser.add_argument("--reprocess", action="store_true", help="Reprocessed failed entries with OA link") 
-    parser.add_argument("--reset", action="store_true", help="Ignore previous processing states, and re-init the harvesting process from the beginning") 
-    parser.add_argument("--increment", action="store_true", help="Augment an existing harvesting with a new released Unpaywall dataset (gzipped)") 
+    parser.add_argument("--dump", default="dump.json", help="write all JSON entries having a sucessful OA link with their UUID") 
+    parser.add_argument("--reprocess", action="store_true", help="reprocessed failed entries with OA link") 
+    parser.add_argument("--reset", action="store_true", help="ignore previous processing states, and re-init the harvesting process from the beginning") 
+    parser.add_argument("--increment", action="store_true", help="augment an existing harvesting with a new released Unpaywall dataset (gzipped)") 
+    parser.add_argument("--thumbnail", action="store_true", help="generate thumbnail files for the front page of the PDF") 
     
     args = parser.parse_args()
 
     unpaywall = args.unpaywall
+    pmc = args.pmc
     config_path = args.config
     reprocess = args.reprocess
     reset = args.reset
     dump = args.dump
+    thumbnail = args.thumbnail
 
-    harvester = OAHarverster(config_path=config_path)
+    harvester = OAHarverster(config_path=config_path, thumbnail=thumbnail)
 
     if reset:
         harvester.reset()
@@ -477,6 +602,9 @@ if __name__ == "__main__":
         harvester.diagnostic()
     elif unpaywall is not None: 
         harvester.harvestUnpaywall(unpaywall)
+        harvester.diagnostic()
+    elif pmc is not None: 
+        harvester.harvestPMC(pmc)
         harvester.diagnostic()
 
     runtime = round(time.time() - start_time, 3)

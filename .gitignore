@@ -10,12 +10,8 @@ target
 *.old
 *.obj
 *.zip
-data/doi
-data/entries
-data/fail
-data/*.pdf
-data/*.png
+*.tar.gz
+data/
 my_config.json
 __pycache__
-doc/
 OAHarvesterStreaming.py
