@@ -14,7 +14,9 @@ Python utility for harvesting efficiently a large Open Access collection of PDF:
 
 * As a bonus, image thumbnails of the front page of the PDF are created and stored with the PDF.
 
-The utility can be used in particular to harvest the Unpaywall dataset and the PMC publications (PDF and corresponding NLM XML files).
+* It is also possible to harvest only a random sample of PDF instead of complete sets. 
+
+The utility can be used in particular to harvest the **Unpaywall** dataset and the **PMC** publications (PDF and corresponding NLM XML files).
 
 ## Requirements
 
@@ -54,7 +56,7 @@ A configuration file must be completed, by default the file `config.json` will b
 }
 ```
 
-Note: for harvesting PMC files, although the ftp server is used, downloads tend to fail as the parallel requests increase. It might be useful to lower the default, and to launch `reprocess` for completing the harvesting. For the unpaywall dataset, we have good results with high `batch_size` (like 200) because the distribution of the URL implies that requests are never concentrated on one server. 
+Note: for harvesting PMC files, although the ftp server is used, downloads tend to fail as the parallel requests increase. It might be useful to lower the default, and to launch `reprocess` for completing the harvesting. For the unpaywall dataset, we have good results with high `batch_size` (like 200), probably because the distribution of the URL implies that requests are never concentrated on one server. 
 
 Also note that: 
 
@@ -85,6 +87,8 @@ optional arguments:
   --reset               ignore previous processing states, and re-init the
                         harvesting process from the beginning  
   --thumbnail           generate thumbnail files for the front page of the PDF
+  --sample SAMPLE       Harvest only a random sample of indicated size
+
 ```
 
 The Unpaywall dataset is available from Impactstory. 
@@ -130,6 +134,14 @@ For downloading the PDF from the PMC set, simply use the `--pmc` parameter inste
 ```bash
 > python3 OAHarvester.py --pmc /mnt/data/biblio/oa_file_list.txt
 ```
+
+For harvesting only a predifined random number of entries and not the whole sets, the parameter `--sample` can be used with the desired number:
+
+```bash
+> python3 OAHarvester.py --pmc /mnt/data/biblio/oa_file_list.txt --sample 2000
+```
+
+This command will harvest 2000 PDF randomly distributed in the complete PMC set. For the Unpaywall set, as around 20% of the entries only have an Open Access PDF, you will need to multiply by 5 the sample number, e.g. if you wish 2000 PDF, indicate `--sample 10000`. 
 
 
 ### Dump for identifier mapping

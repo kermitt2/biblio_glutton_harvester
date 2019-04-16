@@ -15,6 +15,7 @@ import S3
 from concurrent.futures import ThreadPoolExecutor
 import subprocess
 import  tarfile
+from random import randint
 
 map_size = 100 * 1024 * 1024 * 1024 
 
@@ -29,7 +30,7 @@ only when the first is entirely processed.
 '''
 class OAHarverster(object):
 
-    def __init__(self, config_path='./config.json', thumbnail=False):
+    def __init__(self, config_path='./config.json', thumbnail=False, sample=None):
         self.config = None
         
         # standard lmdb environment for storing biblio entries by uuid
@@ -42,8 +43,13 @@ class OAHarverster(object):
         self.env_fail = None
 
         self._load_config(config_path)
+        
+        # boolean indicating if we want to generate thumbnails of front page of PDF 
         self.thumbnail = thumbnail
         self._init_lmdb()
+
+        # if a sample value is provided, indicate that we only harvest the indicated number of PDF
+        self.sample = sample
 
         self.s3 = None
         if self.config["bucket_name"] is not None and len(self.config["bucket_name"]) is not 0:
@@ -81,10 +87,25 @@ class OAHarverster(object):
         urls = []
         entries = []
         filenames = []
+        selection = None
+
+        if self.sample is not None:
+            # check the overall number of entries based on the line number
+            with gzip.open(filepath, 'rb') as gz:  
+                count = 0
+                while 1:
+                    buffer = gz.read(8192*1024)
+                    if not buffer: break
+                    count += buffer.count(b'\n')
+            # random selection corresponding to the requested sample size
+            selection = [randint(0, count-1) for p in range(0, sample)]
+            selection.sort()
 
         gz = gzip.open(filepath, 'rt')
-        for line in gz:
-            #if n >= 10:
+        for count, line in enumerate(gz):
+            if selection is not None and not count in selection:
+                continue
+            #if n >= 100:
             #    break
             if i == batch_size_pdf:
                 self.processBatch(urls, filenames, entries)#, txn, txn_doi, txn_fail)
@@ -141,8 +162,25 @@ class OAHarverster(object):
         entries = []
         filenames = []
 
-        with open(filepath, 'r') as fp:  
+        selection = None
+
+        if self.sample is not None:
+            # check the overall number of entries based on the line number
+            with open(filepath, 'rb') as fp:  
+                count = 0
+                while 1:
+                    buffer = fp.read(8192*1024)
+                    if not buffer: break
+                    count += buffer.count(b'\n')
+            # random selection corresponding to the requested sample size
+            selection = [randint(0, count-1) for p in range(0, sample)]
+            selection.sort()
+
+        with open(filepath, 'rt') as fp:  
             for count, line in enumerate(fp):
+                if selection is not None and not count in selection:
+                    continue
+
                 # skip first line which gives the date when the list has been generated
                 if count == 0:
                     continue
@@ -570,7 +608,7 @@ def test():
     harvester = OAHarverster()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description = "OA PDF harvester")
+    parser = argparse.ArgumentParser(description = "Open Access PDF harvester")
     parser.add_argument("--unpaywall", default=None, help="path to the Unpaywall dataset (gzipped)") 
     parser.add_argument("--pmc", default=None, help="path to the pmc file list, as available on NIH's site") 
     parser.add_argument("--config", default="./config.json", help="path to the config file, default is ./config.json") 
@@ -579,7 +617,8 @@ if __name__ == "__main__":
     parser.add_argument("--reset", action="store_true", help="ignore previous processing states, and re-init the harvesting process from the beginning") 
     parser.add_argument("--increment", action="store_true", help="augment an existing harvesting with a new released Unpaywall dataset (gzipped)") 
     parser.add_argument("--thumbnail", action="store_true", help="generate thumbnail files for the front page of the PDF") 
-    
+    parser.add_argument("--sample", type=int, default=None, help="Harvest only a random sample of indicated size")
+
     args = parser.parse_args()
 
     unpaywall = args.unpaywall
@@ -589,8 +628,9 @@ if __name__ == "__main__":
     reset = args.reset
     dump = args.dump
     thumbnail = args.thumbnail
+    sample = args.sample
 
-    harvester = OAHarverster(config_path=config_path, thumbnail=thumbnail)
+    harvester = OAHarverster(config_path=config_path, thumbnail=thumbnail, sample=sample)
 
     if reset:
         harvester.reset()
