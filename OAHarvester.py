@@ -556,7 +556,7 @@ def download(url, filename, entry):
                         os.rename(os.path.join(thedir,tmp_subdir,member.name), filename.replace(".tar.gz", ".pdf"))                        
                         pdf_found = True
                     # delete temporary unique subdirectory
-                    os.remove(os.path.join(thedir,tmp_subdir))
+                    shutil.rmtree(os.path.join(thedir,tmp_subdir))
                     #break
                 if member.isfile() and member.name.endswith(".nxml"):
                     member.name = os.path.basename(member.name)
@@ -569,7 +569,7 @@ def download(url, filename, entry):
                     if os.path.isfile(os.path.join(thedir,member.name)):
                         os.rename(os.path.join(thedir,tmp_subdir,member.name), filename.replace(".tar.gz", ".nxml"))
                     # delete temporary unique subdirectory
-                    os.remove(os.path.join(thedir,tmp_subdir))
+                    shutil.rmtree(os.path.join(thedir,tmp_subdir))
             tar.close()
             if not pdf_found:
                 print("warning: no pdf found in archive:", filename)
