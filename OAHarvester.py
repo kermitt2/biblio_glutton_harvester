@@ -566,7 +566,7 @@ def download(url, filename, entry):
                     f = tar.extract(member, path=os.path.join(thedir,tmp_subdir))
                     #print("extracted file:", member.name)
                     # be sure that the file exists (corrupted archives are not a legend)
-                    if os.path.isfile(os.path.join(thedir,member.name)):
+                    if os.path.isfile(os.path.join(thedir,tmp_subdir,member.name)):
                         os.rename(os.path.join(thedir,tmp_subdir,member.name), filename.replace(".tar.gz", ".nxml"))
                     # delete temporary unique subdirectory
                     shutil.rmtree(os.path.join(thedir,tmp_subdir))
