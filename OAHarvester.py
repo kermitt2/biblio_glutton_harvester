@@ -531,7 +531,7 @@ def download(url, filename, entry):
         result = subprocess.check_call(cmd, shell=True)
         #print("result:", result)
         # check if finename exists
-        if filename.endswith(".tar.gz") and os.path.isfile(filename):
+        if os.path.isfile(filename) and filename.endswith(".tar.gz"):
             # for PMC we still have to extract the PDF from archive
             #print(filename, "is an archive")
             thedir = os.path.dirname(filename)
@@ -543,14 +543,18 @@ def download(url, filename, entry):
                     member.name = os.path.basename(member.name)
                     f = tar.extract(member, path=thedir)
                     #print("extracted file:", member.name)
-                    os.rename(os.path.join(thedir,member.name), filename.replace(".tar.gz", ".pdf"))
-                    pdf_found = True
+                    # be sure that the file exists (corrupted archives are not a legend)
+                    if os.path.isfile(os.path.join(thedir,member.name)):
+                        os.rename(os.path.join(thedir,member.name), filename.replace(".tar.gz", ".pdf"))
+                        pdf_found = True
                     #break
                 if member.isfile() and member.name.endswith(".nxml"):
                     member.name = os.path.basename(member.name)
                     f = tar.extract(member, path=thedir)
                     #print("extracted file:", member.name)
-                    os.rename(os.path.join(thedir,member.name), filename.replace(".tar.gz", ".nxml"))
+                    # be sure that the file exists (corrupted archives are not a legend)
+                    if os.path.isfile(os.path.join(thedir,member.name)):
+                        os.rename(os.path.join(thedir,member.name), filename.replace(".tar.gz", ".nxml"))
             tar.close()
             if not pdf_found:
                 print("warning: no pdf found in archive:", filename)
