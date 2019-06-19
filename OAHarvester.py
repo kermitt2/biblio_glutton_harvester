@@ -547,27 +547,29 @@ def download(url, filename, entry):
                 if not pdf_found and member.isfile() and (member.name.endswith(".pdf") or member.name.endswith(".PDF")):
                     member.name = os.path.basename(member.name)
                     # create unique subdirectory
-                    os.mkdir(os.path.join(thedir,tmp_subdir))
+                    if not os.path.exists(os.path.join(thedir,tmp_subdir)):
+                        os.mkdir(os.path.join(thedir,tmp_subdir))
                     f = tar.extract(member, path=os.path.join(thedir,tmp_subdir))
                     #print("extracted file:", member.name)
                     # be sure that the file exists (corrupted archives are not a legend)
                     if os.path.isfile(os.path.join(thedir,tmp_subdir,member.name)):
-                        os.rename(os.path.join(thedir,tmp_subdir,member.name), filename.replace(".tar.gz", ".pdf"))
-                        # delete temporary unique subdirectory
-                        os.remove(os.path.join(thedir,tmp_subdir))
+                        os.rename(os.path.join(thedir,tmp_subdir,member.name), filename.replace(".tar.gz", ".pdf"))                        
                         pdf_found = True
+                    # delete temporary unique subdirectory
+                    os.remove(os.path.join(thedir,tmp_subdir))
                     #break
                 if member.isfile() and member.name.endswith(".nxml"):
                     member.name = os.path.basename(member.name)
                     # create unique subdirectory
-                    os.mkdir(os.path.join(thedir,tmp_subdir))
+                    if not os.path.exists(os.path.join(thedir,tmp_subdir)):
+                        os.mkdir(os.path.join(thedir,tmp_subdir))
                     f = tar.extract(member, path=os.path.join(thedir,tmp_subdir))
                     #print("extracted file:", member.name)
                     # be sure that the file exists (corrupted archives are not a legend)
                     if os.path.isfile(os.path.join(thedir,member.name)):
                         os.rename(os.path.join(thedir,tmp_subdir,member.name), filename.replace(".tar.gz", ".nxml"))
-                        # delete temporary unique subdirectory
-                        os.remove(os.path.join(thedir,tmp_subdir))
+                    # delete temporary unique subdirectory
+                    os.remove(os.path.join(thedir,tmp_subdir))
             tar.close()
             if not pdf_found:
                 print("warning: no pdf found in archive:", filename)
