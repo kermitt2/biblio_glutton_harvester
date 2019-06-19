@@ -541,7 +541,8 @@ def download(url, filename, entry):
             # this is a unique temporary subdirectory to extract the relevant files in the archive, unique directory is
             # introduced to avoid several files with the same name from different archives to be extracted in the 
             # same place 
-            tmp_subdir = filename[0:6]
+            basename = os.path.basename(filename)
+            tmp_subdir = basename[0:6]
             for member in tar.getmembers():
                 if not pdf_found and member.isfile() and (member.name.endswith(".pdf") or member.name.endswith(".PDF")):
                     member.name = os.path.basename(member.name)
