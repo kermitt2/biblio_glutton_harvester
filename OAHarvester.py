@@ -64,12 +64,13 @@ class OAHarverster(object):
 
     def _init_lmdb(self):
         # create the data path if it does not exist 
-        try:  
-            os.makedirs(self.config["data_path"])
-        except OSError:  
-            print ("Creation of the directory %s failed" % self.config["data_path"])
-        else:  
-            print ("Successfully created the directory %s" % self.config["data_path"])
+        if not os.path.isdir(self.config["data_path"]):
+            try:  
+                os.makedirs(self.config["data_path"])
+            except OSError:  
+                print ("Creation of the directory %s failed" % self.config["data_path"])
+            else:  
+                print ("Successfully created the directory %s" % self.config["data_path"])
 
         # open in write mode
         envFilePath = os.path.join(self.config["data_path"], 'entries')
