@@ -63,6 +63,14 @@ class OAHarverster(object):
         self.config = json.loads(config_json)
 
     def _init_lmdb(self):
+        # create the data path if it does not exist 
+        try:  
+            os.makedirs(self.config["data_path"])
+        except OSError:  
+            print ("Creation of the directory %s failed" % self.config["data_path"])
+        else:  
+            print ("Successfully created the directory %s" % self.config["data_path"])
+
         # open in write mode
         envFilePath = os.path.join(self.config["data_path"], 'entries')
         self.env = lmdb.open(envFilePath, map_size=map_size)
@@ -220,6 +228,7 @@ class OAHarverster(object):
                     entry['id'] = str(uuid.uuid4())
                     entry['pmcid'] = pmcid
                     entry['pmid'] = pmid
+                    # TODO: avoid depending on instanciated DOI
                     entry['doi'] = pmcid
                     entry_url = {}
                     entry_url['url_for_pdf'] = tar_url
