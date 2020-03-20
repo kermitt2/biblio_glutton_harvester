@@ -14,7 +14,7 @@ import time
 import S3
 from concurrent.futures import ThreadPoolExecutor
 import subprocess
-import  tarfile
+import tarfile
 from random import randint
 
 map_size = 100 * 1024 * 1024 * 1024 
@@ -475,7 +475,7 @@ class OAHarverster(object):
         print("number of entries with OA link:", nb_total)
 
         with open(dump_file,'w') as file_out:
-            # iterate over the fail lmdb
+            # iterate over lmdb
             cursor = txn.cursor()
             for key, value in cursor:
                 if txn.get(key) is None:
