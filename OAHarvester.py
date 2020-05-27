@@ -5,6 +5,8 @@ import os
 import shutil
 import gzip
 import json
+import magic
+import requests
 import pickle
 import lmdb
 import uuid
@@ -247,7 +249,7 @@ class OAHarverster(object):
 
     def processBatch(self, urls, filenames, entries):#, txn, txn_doi, txn_fail):
         with ThreadPoolExecutor(max_workers=12) as executor:
-            results = executor.map(download, urls, filenames, entries)
+            results = executor.map(_download, urls, filenames, entries)
 
         # LMDB write transaction must be performed in the thread that created the transaction, so
         # we need to have the following lmdb updates out of the paralell process
@@ -256,18 +258,19 @@ class OAHarverster(object):
             local_entry = result[1]
             # conservative check if the downloaded file is of size 0 with a status code sucessful (code: 0),
             # it should not happen *in theory*
-            empty_file = False
+            # and check mime type
+            valid_file = False
             local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
             if os.path.isfile(local_filename): 
-                if os.path.getsize(local_filename) == 0:
-                    empty_file = True
+                if _is_valid_file(local_filename, "pdf"):
+                    valid_file = True
             
-            local_filename = os.path.join(self.config["data_path"], local_entry['id']+".tar.gz")
+            local_filename = os.path.join(self.config["data_path"], local_entry['id']+".nxml")
             if os.path.isfile(local_filename): 
-                if os.path.getsize(local_filename) == 0:
-                    empty_file = True
+                if _is_valid_file(local_filename, "xml"):
+                    valid_file = True
 
-            if result[0] is None or result[0] == "0" and not empty_file:
+            if (result[0] is None or result[0] == "0" or result[0] == "success") and valid_file:
                 #update DB
                 with self.env.begin(write=True) as txn:
                     txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(local_entry)) 
@@ -308,7 +311,7 @@ class OAHarverster(object):
 
     def processBatchReprocess(self, urls, filenames, entries):#, txn, txn_doi, txn_fail):
         with ThreadPoolExecutor(max_workers=12) as executor:
-            results = executor.map(download, urls, filenames, entries)
+            results = executor.map(_download, urls, filenames, entries)
         
         # LMDB write transactions in the thread that created the transaction
         entries = []
@@ -377,6 +380,7 @@ class OAHarverster(object):
             # save under local storate indicated by data_path in the config json
             try:
                 local_dest_path = os.path.join(self.config["data_path"], dest_path)
+
                 os.makedirs(os.path.dirname(local_dest_path), exist_ok=True)
                 if os.path.isfile(local_filename):
                     shutil.copyfile(local_filename, os.path.join(local_dest_path, local_entry['id']+".pdf"))
@@ -504,13 +508,20 @@ class OAHarverster(object):
         envFilePath = os.path.join(self.config["data_path"], 'fail')
         shutil.rmtree(envFilePath)
 
-        # re-init the environments
-        self._init_lmdb()
-
         # clean any possibly remaining tmp files (.pdf and .png)
         for f in os.listdir(self.config["data_path"]):
-            if f.endswith(".pdf") or f.endswith(".png") or f.endswith(".nxml") or f.endswith(".tar.gz"):
+            if f.endswith(".pdf") or f.endswith(".png") or f.endswith(".nxml") or f.endswith(".tar.gz") or f.endswith(".xml"):
                 os.remove(os.path.join(self.config["data_path"], f))
+            # clean any existing data files, except 
+            path = os.path.join(self.config["data_path"], f)
+            if os.path.isdir(path):
+                try:
+                    shutil.rmtree(path)
+                except OSError as e:
+                    print("Error: %s - %s." % (e.filename, e.strerror))
+
+        # re-init the environments
+        self._init_lmdb()
 
     def diagnostic(self):
         """
@@ -528,10 +539,93 @@ def _serialize_pickle(a):
 def _deserialize_pickle(serialized):
     return pickle.loads(serialized)
 
+
+def _download(url, filename, entry):
+    result = _download_wget(url, filename)
+    if result != "success":
+        result = _download_requests(url, filename)
+
+    if os.path.isfile(filename) and filename.endswith(".tar.gz"):
+        _manage_pmc_archives(filename)
+
+    return result, entry
+
+def _download_wget(url, filename):
+    """ 
+    First try with Python requests (which handle well compression), then move to a more robust download approach
+    """
+    result = "fail"
+    # This is the most robust and reliable way to download files I found with Python... to rely on system wget :)
+    #cmd = "wget -c --quiet" + " -O " + filename + ' --connect-timeout=10 --waitretry=10 ' + \
+    cmd = "wget -c --quiet" + " -O " + filename + ' --timeout=5 --waitretry=0 --tries=10 --retry-connrefused ' + \
+        '--header="User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0" ' + \
+        '--header="Accept: application/pdf, text/html;q=0.9,*/*;q=0.8" --header="Accept-Encoding: gzip, deflate" ' + \
+        '--no-check-certificate ' + \
+        '"' + url + '"'
+    #print(cmd)
+    try:
+        result = subprocess.check_call(cmd, shell=True)
+        
+        # if the used version of wget does not decompress automatically, the following ensures it is done
+        result_compression = _check_compression(filename)
+        if not result_compression:
+            # decompression failed, or file is invalid
+            if os.path.isfile(filename):
+                try:
+                    os.remove(filename)
+                except OSError:
+                    print ("Deletion of invalid compressed file failed:", filename) 
+                    result = "fail"
+            # ensure cleaning
+            if os.path.isfile(filename+'.decompressed'):
+                try:
+                    os.remove(filename+'.decompressed')
+                except OSError:  
+                    print ("Final deletion of temp decompressed file failed:", filename+'.decompressed')    
+        else:
+            result = "success"
+
+    except subprocess.CalledProcessError as e:   
+        print("e.returncode", e.returncode)
+        print("e.output", e.output)
+        print("wget command was: "+cmd)
+        #if e.output is not None and e.output.startswith('error: {'):
+        if  e.output is not None:
+            error = json.loads(e.output[7:]) # Skip "error: "
+            print("error code:", error['code'])
+            print("error message:", error['message'])
+        result = "fail"
+
+    except Exception as e:
+        # a bit of bad practice
+        print("Unexpected error wget process", e)
+        result = "fail"
+
+    return str(result)
+
+def _download_requests(url, filename):
+    """ 
+    Download with Python requests which handle well compression, but not very robust and bad parallelization
+    """
+    HEADERS = {"""User-Agent""": """Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0"""}
+    result = "fail" 
+    try:
+        file_data = requests.get(url, allow_redirects=True, headers=HEADERS)
+        if file_data.status_code == 200:
+            with open(filename, 'wb') as f_out:
+                f_out.write(file_data.content)
+            result = "success"
+    except Exception:
+        print("Download failed for {0} with requests".format(url))
+    return result
+
+
+
+"""
 def download(url, filename, entry):
     #cmd = "wget -c --quiet" + " -O " + filename + ' --connect-timeout=10 --waitretry=10 ' + \
     cmd = "wget -c --quiet" + " -O " + filename + '  --timeout=2 --waitretry=0 --tries=5 --retry-connrefused ' + \
-        '--header="User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/60.0" ' + \
+        '--header="User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0" ' + \
         '--header="Accept: application/pdf, text/html;q=0.9,*/*;q=0.8" --header="Accept-Encoding: gzip, deflate" ' + \
         '"' + url + '"'
         #'--header="Referer: https://www.google.com"' +
@@ -599,6 +693,122 @@ def download(url, filename, entry):
             result = e.returncode
 
     return str(result), entry
+"""
+
+def _check_compression(file):
+    '''
+    check if a file is compressed, if yes decompress and replace by the decompressed version
+    '''
+    if os.path.isfile(file):
+        if os.path.getsize(file) == 0:
+            return False
+        file_type = magic.from_file(file, mime=True)
+        if file_type == 'application/gzip':
+            success = False
+            # decompressed in tmp file
+            with gzip.open(file, 'rb') as f_in:
+                with open(file+'.decompressed', 'wb') as f_out:
+                    try:
+                        shutil.copyfileobj(f_in, f_out)
+                    except OSError:  
+                        print ("Decompression file failed:", f_in)
+                    else:
+                        success = True
+            # replace the file
+            if success:
+                try:
+                    shutil.copyfile(file+'.decompressed', file)
+                except OSError:  
+                    print ("Replacement of decompressed file failed:", file)
+                    success = False
+            # delete the tmp file
+            if os.path.isfile(file+'.decompressed'):
+                try:
+                    os.remove(file+'.decompressed')
+                except OSError:  
+                    print ("Deletion of temp decompressed file failed:", file+'.decompressed')    
+            return success
+        else:
+            return True
+    return False
+
+def _is_valid_file(file, mime_type):
+    target_mime = []
+    if mime_type == 'xml':
+        target_mime.append("application/xml")
+        target_mime.append("text/xml")
+    elif mime_type == 'png':
+        target_mime.append("image/png")
+    else:
+        target_mime.append("application/"+mime_type)
+    file_type = ""
+    if os.path.isfile(file):
+        if os.path.getsize(file) == 0:
+            return False
+        file_type = magic.from_file(file, mime=True)
+    return file_type in target_mime
+
+def _manage_pmc_archives(filename):
+    # check if finename exists and we have downloaded an archive rather than a PDF (case ftp PMC)
+    if os.path.isfile(filename) and filename.endswith(".tar.gz"):
+        try:
+            # for PMC we still have to extract the PDF from archive
+            #print(filename, "is an archive")
+            thedir = os.path.dirname(filename)
+            # we need to extract the PDF, the NLM extra file, change file name and remove the tar file
+            tar = tarfile.open(filename)
+            pdf_found = False
+            # this is a unique temporary subdirectory to extract the relevant files in the archive, unique directory is
+            # introduced to avoid several files with the same name from different archives to be extracted in the 
+            # same place 
+            basename = os.path.basename(filename)
+            tmp_subdir = basename[0:6]
+            for member in tar.getmembers():
+                if not pdf_found and member.isfile() and (member.name.endswith(".pdf") or member.name.endswith(".PDF")):
+                    member.name = os.path.basename(member.name)
+                    # create unique subdirectory
+                    if not os.path.exists(os.path.join(thedir,tmp_subdir)):
+                        os.mkdir(os.path.join(thedir,tmp_subdir))
+                    f = tar.extract(member, path=os.path.join(thedir,tmp_subdir))
+                    #print("extracted file:", member.name)
+                    # be sure that the file exists (corrupted archives are not a legend)
+                    if os.path.isfile(os.path.join(thedir,tmp_subdir,member.name)):
+                        os.rename(os.path.join(thedir,tmp_subdir,member.name), filename.replace(".tar.gz", ".pdf"))                        
+                        pdf_found = True
+                    # delete temporary unique subdirectory
+                    try:
+                        shutil.rmtree(os.path.join(thedir,tmp_subdir))
+                    except OSError:  
+                        print ("Deletion of tmp dir failed:", os.path.join(thedir,tmp_subdir))     
+                    #break
+                if member.isfile() and member.name.endswith(".nxml"):
+                    member.name = os.path.basename(member.name)
+                    # create unique subdirectory
+                    if not os.path.exists(os.path.join(thedir,tmp_subdir)):
+                        os.mkdir(os.path.join(thedir,tmp_subdir))
+                    f = tar.extract(member, path=os.path.join(thedir,tmp_subdir))
+                    #print("extracted file:", member.name)
+                    # be sure that the file exists (corrupted archives are not a legend)
+                    if os.path.isfile(os.path.join(thedir,tmp_subdir,member.name)):
+                        os.rename(os.path.join(thedir,tmp_subdir,member.name), filename.replace(".tar.gz", ".nxml"))
+                    # delete temporary unique subdirectory
+                    try:
+                        shutil.rmtree(os.path.join(thedir,tmp_subdir))
+                    except OSError:  
+                        print ("Deletion of tmp dir failed:", os.path.join(thedir,tmp_subdir))      
+            tar.close()
+            if not pdf_found:
+                print("warning: no pdf found in archive:", filename)
+            if os.path.isfile(filename):
+                try:
+                    os.remove(filename)
+                except OSError:  
+                    print ("Deletion of PMC archive file failed:", filename) 
+        except Exception as e:
+            # a bit of bad practice
+            print("Unexpected error", e)
+            pass
+
 
 def generate_thumbnail(pdfFile):
     """
@@ -626,12 +836,13 @@ def generate_thumbnail(pdfFile):
     except subprocess.CalledProcessError as e:   
         print("e.returncode", e.returncode)
 
-def generateS3Path(filename):
+def generateS3Path(identifier):
     '''
     Convert a file name into a path with file prefix as directory paths:
     123456789 -> 12/34/56/123456789
     '''
-    return filename[:2] + '/' + filename[2:4] + '/' + filename[4:6] + "/" + filename[6:8] + "/"
+    #return filename[:2] + '/' + filename[2:4] + '/' + filename[4:6] + "/" + filename[6:8] + "/"
+    return os.path.join(identifier[:2], identifier[2:4], identifier[4:6], identifier[6:8], "")
 
 def test():
     harvester = OAHarverster()
