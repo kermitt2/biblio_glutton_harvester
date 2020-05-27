@@ -619,82 +619,6 @@ def _download_requests(url, filename):
         print("Download failed for {0} with requests".format(url))
     return result
 
-
-
-"""
-def download(url, filename, entry):
-    #cmd = "wget -c --quiet" + " -O " + filename + ' --connect-timeout=10 --waitretry=10 ' + \
-    cmd = "wget -c --quiet" + " -O " + filename + '  --timeout=2 --waitretry=0 --tries=5 --retry-connrefused ' + \
-        '--header="User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0" ' + \
-        '--header="Accept: application/pdf, text/html;q=0.9,*/*;q=0.8" --header="Accept-Encoding: gzip, deflate" ' + \
-        '"' + url + '"'
-        #'--header="Referer: https://www.google.com"' +
-        #' --random-wait' +
-    #print(cmd)
-    try:
-        result = subprocess.check_call(cmd, shell=True)
-        #print("result:", result)
-        # check if finename exists
-        if os.path.isfile(filename) and filename.endswith(".tar.gz"):
-            # for PMC we still have to extract the PDF from archive
-            #print(filename, "is an archive")
-            thedir = os.path.dirname(filename)
-            # we need to extract the PDF, the NLM extra file, change file name and remove the tar file
-            tar = tarfile.open(filename)
-            pdf_found = False
-            # this is a unique temporary subdirectory to extract the relevant files in the archive, unique directory is
-            # introduced to avoid several files with the same name from different archives to be extracted in the 
-            # same place 
-            basename = os.path.basename(filename)
-            tmp_subdir = basename[0:6]
-            for member in tar.getmembers():
-                if not pdf_found and member.isfile() and (member.name.endswith(".pdf") or member.name.endswith(".PDF")):
-                    member.name = os.path.basename(member.name)
-                    # create unique subdirectory
-                    if not os.path.exists(os.path.join(thedir,tmp_subdir)):
-                        os.mkdir(os.path.join(thedir,tmp_subdir))
-                    f = tar.extract(member, path=os.path.join(thedir,tmp_subdir))
-                    #print("extracted file:", member.name)
-                    # be sure that the file exists (corrupted archives are not a legend)
-                    if os.path.isfile(os.path.join(thedir,tmp_subdir,member.name)):
-                        os.rename(os.path.join(thedir,tmp_subdir,member.name), filename.replace(".tar.gz", ".pdf"))                        
-                        pdf_found = True
-                    # delete temporary unique subdirectory
-                    shutil.rmtree(os.path.join(thedir,tmp_subdir))
-                    #break
-                if member.isfile() and member.name.endswith(".nxml"):
-                    member.name = os.path.basename(member.name)
-                    # create unique subdirectory
-                    if not os.path.exists(os.path.join(thedir,tmp_subdir)):
-                        os.mkdir(os.path.join(thedir,tmp_subdir))
-                    f = tar.extract(member, path=os.path.join(thedir,tmp_subdir))
-                    #print("extracted file:", member.name)
-                    # be sure that the file exists (corrupted archives are not a legend)
-                    if os.path.isfile(os.path.join(thedir,tmp_subdir,member.name)):
-                        os.rename(os.path.join(thedir,tmp_subdir,member.name), filename.replace(".tar.gz", ".nxml"))
-                    # delete temporary unique subdirectory
-                    shutil.rmtree(os.path.join(thedir,tmp_subdir))
-            tar.close()
-            if not pdf_found:
-                print("warning: no pdf found in archive:", filename)
-            if os.path.isfile(filename):
-                os.remove(filename)
-
-    except subprocess.CalledProcessError as e:   
-        print("e.returncode", e.returncode)
-        print("e.output", e.output)
-        #if e.output is not None and e.output.startswith('error: {'):
-        if  e.output is not None:
-            error = json.loads(e.output[7:]) # Skip "error: "
-            print("error code:", error['code'])
-            print("error message:", error['message'])
-            result = error['message']
-        else:
-            result = e.returncode
-
-    return str(result), entry
-"""
-
 def _check_compression(file):
     '''
     check if a file is compressed, if yes decompress and replace by the decompressed version
@@ -841,7 +765,6 @@ def generateS3Path(identifier):
     Convert a file name into a path with file prefix as directory paths:
     123456789 -> 12/34/56/123456789
     '''
-    #return filename[:2] + '/' + filename[2:4] + '/' + filename[4:6] + "/" + filename[6:8] + "/"
     return os.path.join(identifier[:2], identifier[2:4], identifier[4:6], identifier[6:8], "")
 
 def test():
