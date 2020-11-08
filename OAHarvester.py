@@ -353,7 +353,7 @@ class OAHarverster(object):
         if self.thumbnail:
             generate_thumbnail(local_filename)
         
-        dest_path = generateS3Path(local_entry['id'])
+        dest_path = generateStoragePath(local_entry['id'])
         thumb_file_small = local_filename.replace('.pdf', '-thumb-small.png')
         thumb_file_medium = local_filename.replace('.pdf', '-thumb-medium.png')
         thumb_file_large = local_filename.replace('.pdf', '-thumb-large.png')
@@ -760,7 +760,7 @@ def generate_thumbnail(pdfFile):
     except subprocess.CalledProcessError as e:   
         print("e.returncode", e.returncode)
 
-def generateS3Path(identifier):
+def generateStoragePath(identifier):
     '''
     Convert a file name into a path with file prefix as directory paths:
     123456789 -> 12/34/56/123456789
