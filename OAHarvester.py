@@ -23,6 +23,9 @@ map_size = 100 * 1024 * 1024 * 1024
 
 
 '''
+Harvester for PDF available in open access. a LMDB index is used to keep track of the harvesting process and
+possible failures.  
+
 This version uses the standard ThreadPoolExecutor for parallelizing the download/processing/upload processes. 
 Given the limits of ThreadPoolExecutor (input stored in memory, blocking Executor.map until the whole input
 is processed and output stored in memory until all input is consumed), it works with batches of PDF of a size 
@@ -87,8 +90,8 @@ class OAHarverster(object):
     def harvestUnpaywall(self, filepath):   
         """
         Main method, use the Unpaywall dataset for getting pdf url for Open Access resources, 
-        download in parallel PDF, generate thumbnails, upload resources on S3 and update
-        the json description of the entries
+        download in parallel PDF, generate thumbnails (if selected), upload resources locally 
+        or on S3 and update the json description of the entries
         """
         batch_size_pdf = self.config['batch_size']
         # batch size for lmdb commit
@@ -610,7 +613,7 @@ def _download_requests(url, filename):
     HEADERS = {"""User-Agent""": """Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0"""}
     result = "fail" 
     try:
-        file_data = requests.get(url, allow_redirects=True, headers=HEADERS)
+        file_data = requests.get(url, allow_redirects=True, headers=HEADERS, verify=False, timeout=20)
         if file_data.status_code == 200:
             with open(filename, 'wb') as f_out:
                 f_out.write(file_data.content)
