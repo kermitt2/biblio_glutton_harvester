@@ -18,9 +18,12 @@ from concurrent.futures import ThreadPoolExecutor
 import subprocess
 import tarfile
 from random import randint
+from tqdm import tqdm
+import logging
+import logging.handlers
 
 map_size = 100 * 1024 * 1024 * 1024 
-
+logging.basicConfig(filename='harvester.log', filemode='w', level=logging.DEBUG)
 
 '''
 Harvester for PDF available in open access. a LMDB index is used to keep track of the harvesting process and
@@ -73,9 +76,9 @@ class OAHarverster(object):
             try:  
                 os.makedirs(self.config["data_path"])
             except OSError:  
-                print ("Creation of the directory %s failed" % self.config["data_path"])
+                logging.error("Creation of the directory %s failed" % self.config["data_path"])
             else:  
-                print ("Successfully created the directory %s" % self.config["data_path"])
+                logging.debug("Successfully created the directory %s" % self.config["data_path"])
 
         # open in write mode
         envFilePath = os.path.join(self.config["data_path"], 'entries')
@@ -103,26 +106,31 @@ class OAHarverster(object):
         filenames = []
         selection = None
 
+        # check the overall number of entries based on the line number
+        print("\ncalculating number of entries...")
+        count = 0
+        with gzip.open(filepath, 'rb') as gz:  
+            while 1:
+                buffer = gz.read(8192*1024)
+                if not buffer: break
+                count += buffer.count(b'\n')
+
         if self.sample is not None:
-            # check the overall number of entries based on the line number
-            with gzip.open(filepath, 'rb') as gz:  
-                count = 0
-                while 1:
-                    buffer = gz.read(8192*1024)
-                    if not buffer: break
-                    count += buffer.count(b'\n')
             # random selection corresponding to the requested sample size
             selection = [randint(0, count-1) for p in range(0, sample)]
             selection.sort()
 
         gz = gzip.open(filepath, 'rt')
-        for count, line in enumerate(gz):
-            if selection is not None and not count in selection:
+        position = 0
+        for line in tqdm(gz, total=count):
+            if selection is not None and not position in selection:
+                position += 1
                 continue
+
             #if n >= 100:
             #    break
             if i == batch_size_pdf:
-                self.processBatch(urls, filenames, entries)#, txn, txn_doi, txn_fail)
+                self.processBatch(urls, filenames, entries)
                 # reinit
                 i = 0
                 urls = []
@@ -136,6 +144,7 @@ class OAHarverster(object):
 
             # check if the entry has already been processed
             if self.getUUIDByDoi(doi) is not None:
+                position += 1
                 continue
 
             if 'best_oa_location' in entry:
@@ -143,19 +152,21 @@ class OAHarverster(object):
                     if 'url_for_pdf' in entry['best_oa_location']:
                         pdf_url = entry['best_oa_location']['url_for_pdf']
                         if pdf_url is not None:    
-                            print(pdf_url)
+                            #print(pdf_url)
                             urls.append(pdf_url)
+                            # TBD: consider alternative non-best PDF URL for fallback solution?
 
                             entry['id'] = str(uuid.uuid4())
                             entries.append(entry)
                             filenames.append(os.path.join(self.config["data_path"], entry['id']+".pdf"))
                             i += 1
+            position += 1
             
         gz.close()
 
         # we need to process the latest incomplete batch (if not empty)
         if len(urls) >0:
-            self.processBatch(urls, filenames, entries)#, txn, txn_doi, txn_fail)
+            self.processBatch(urls, filenames, entries)
             n += len(urls)
 
         print("total entries:", n)
@@ -178,25 +189,30 @@ class OAHarverster(object):
 
         selection = None
 
+        # check the overall number of entries based on the line number
+        print("calculating number of entries...")
+        count = 0
+        with open(filepath, 'rb') as fp:  
+            while 1:
+                buffer = fp.read(8192*1024)
+                if not buffer: break
+                count += buffer.count(b'\n')
+
         if self.sample is not None:
-            # check the overall number of entries based on the line number
-            with open(filepath, 'rb') as fp:  
-                count = 0
-                while 1:
-                    buffer = fp.read(8192*1024)
-                    if not buffer: break
-                    count += buffer.count(b'\n')
             # random selection corresponding to the requested sample size
             selection = [randint(0, count-1) for p in range(0, sample)]
             selection.sort()
 
         with open(filepath, 'rt') as fp:  
-            for count, line in enumerate(fp):
-                if selection is not None and not count in selection:
+            position = 0
+            for line in tqdm(gz, total=count):
+                if selection is not None and not position in selection:
+                    position += 1
                     continue
 
                 # skip first line which gives the date when the list has been generated
-                if count == 0:
+                if position == 0:
+                    position += 1
                     continue
                 #if n >= 100:
                 #    break
@@ -219,16 +235,18 @@ class OAHarverster(object):
                     pmid = pmid[ind+1:]
                 
                 if pmcid is None:
+                    position += 1
                     continue
 
                 # check if the entry has already been processed
                 if self.getUUIDByDoi(pmcid) is not None:
+                    position += 1
                     continue
 
                 if subpath is not None:
                     entry = {}
                     tar_url = pmc_base + subpath
-                    print(tar_url)
+                    #print(tar_url)
                     urls.append(tar_url)
 
                     entry['id'] = str(uuid.uuid4())
@@ -242,6 +260,8 @@ class OAHarverster(object):
                     entries.append(entry)
                     filenames.append(os.path.join(self.config["data_path"], entry['id']+".tar.gz"))
                     i += 1
+
+                position += 1
             
         # we need to process the latest incomplete batch (if not empty)
         if len(urls) >0:
@@ -278,13 +298,12 @@ class OAHarverster(object):
                 with self.env.begin(write=True) as txn:
                     txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(local_entry)) 
 
-                #print(" update txn_doi")
                 with self.env_doi.begin(write=True) as txn_doi:
                     txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
 
                 entries.append(local_entry)
             else:
-                print(" error: " + result[0])
+                logging.info("register harvesting failure: " + result[0])
                 
                 #update DB
                 with self.env.begin(write=True) as txn:
@@ -338,7 +357,6 @@ class OAHarverster(object):
                 if os.path.isfile(local_filename): 
                     os.remove(local_filename)
 
-        print("manage files")
         # finally we can parallelize the thumbnail/upload/file cleaning steps for this batch
         with ThreadPoolExecutor(max_workers=12) as executor:
             results = executor.map(self.manageFiles, entries)
@@ -401,7 +419,7 @@ class OAHarverster(object):
                         shutil.copyfile(thumb_file_large, os.path.join(local_dest_path, local_entry['id']+"-thumb-larger.png"))
 
             except IOError as e:
-                print("invalid path", str(e))       
+                logging.error("invalid path", str(e))       
 
         # clean pdf and thumbnail files
         try:
@@ -417,7 +435,7 @@ class OAHarverster(object):
                 if os.path.isfile(thumb_file_large): 
                     os.remove(thumb_file_large)
         except IOError as e:
-            print("temporary file cleaning failed:", str(e))       
+            logging.error("temporary file cleaning failed:", str(e))       
 
 
     def reprocessFailed(self):
@@ -461,7 +479,7 @@ class OAHarverster(object):
 
                 local_entry = _deserialize_pickle(value)
                 pdf_url = local_entry['best_oa_location']['url_for_pdf']  
-                print(pdf_url)
+                #print(pdf_url)
                 urls.append(pdf_url)
                 entries.append(local_entry)
                 if pdf_url.endswith(".tar.gz"):
@@ -521,7 +539,7 @@ class OAHarverster(object):
                 try:
                     shutil.rmtree(path)
                 except OSError as e:
-                    print("Error: %s - %s." % (e.filename, e.strerror))
+                    logging.error("Error: %s - %s." % (e.filename, e.strerror))
 
         # re-init the environments
         self._init_lmdb()
@@ -560,12 +578,11 @@ def _download_wget(url, filename):
     result = "fail"
     # This is the most robust and reliable way to download files I found with Python... to rely on system wget :)
     #cmd = "wget -c --quiet" + " -O " + filename + ' --connect-timeout=10 --waitretry=10 ' + \
-    cmd = "wget -c --quiet" + " -O " + filename + ' --timeout=5 --waitretry=0 --tries=10 --retry-connrefused ' + \
+    cmd = "wget -c --quiet" + " -O " + filename + ' --timeout=15 --waitretry=0 --tries=10 --retry-connrefused ' + \
         '--header="User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0" ' + \
         '--header="Accept: application/pdf, text/html;q=0.9,*/*;q=0.8" --header="Accept-Encoding: gzip, deflate" ' + \
         '--no-check-certificate ' + \
         '"' + url + '"'
-    #print(cmd)
     try:
         result = subprocess.check_call(cmd, shell=True)
         
@@ -577,31 +594,30 @@ def _download_wget(url, filename):
                 try:
                     os.remove(filename)
                 except OSError:
-                    print ("Deletion of invalid compressed file failed:", filename) 
+                    logging.error("Deletion of invalid compressed file failed:", filename) 
                     result = "fail"
             # ensure cleaning
             if os.path.isfile(filename+'.decompressed'):
                 try:
                     os.remove(filename+'.decompressed')
                 except OSError:  
-                    print ("Final deletion of temp decompressed file failed:", filename+'.decompressed')    
+                    logging.error("Final deletion of temp decompressed file failed:", filename+'.decompressed')    
         else:
             result = "success"
 
     except subprocess.CalledProcessError as e:   
-        print("e.returncode", e.returncode)
-        print("e.output", e.output)
-        print("wget command was: "+cmd)
-        #if e.output is not None and e.output.startswith('error: {'):
+        logging.error("e.returncode", e.returncode)
+        logging.error("e.output", e.output)
+        logging.error("wget command was: "+cmd)
         if  e.output is not None:
             error = json.loads(e.output[7:]) # Skip "error: "
-            print("error code:", error['code'])
-            print("error message:", error['message'])
+            logging.error("error code:", error['code'])
+            logging.error("error message:", error['message'])
         result = "fail"
 
     except Exception as e:
         # a bit of bad practice
-        print("Unexpected error wget process", e)
+        logging.error("Unexpected error wget process", e)
         result = "fail"
 
     return str(result)
@@ -613,13 +629,13 @@ def _download_requests(url, filename):
     HEADERS = {"""User-Agent""": """Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0"""}
     result = "fail" 
     try:
-        file_data = requests.get(url, allow_redirects=True, headers=HEADERS, verify=False, timeout=20)
+        file_data = requests.get(url, allow_redirects=True, headers=HEADERS, verify=False, timeout=15)
         if file_data.status_code == 200:
             with open(filename, 'wb') as f_out:
                 f_out.write(file_data.content)
             result = "success"
     except Exception:
-        print("Download failed for {0} with requests".format(url))
+        logging.error("Download failed for {0} with requests".format(url))
     return result
 
 def _check_compression(file):
@@ -638,7 +654,7 @@ def _check_compression(file):
                     try:
                         shutil.copyfileobj(f_in, f_out)
                     except OSError:  
-                        print ("Decompression file failed:", f_in)
+                        logging.error("Decompression file failed:", f_in)
                     else:
                         success = True
             # replace the file
@@ -646,14 +662,14 @@ def _check_compression(file):
                 try:
                     shutil.copyfile(file+'.decompressed', file)
                 except OSError:  
-                    print ("Replacement of decompressed file failed:", file)
+                    logging.error("Replacement of decompressed file failed:", file)
                     success = False
             # delete the tmp file
             if os.path.isfile(file+'.decompressed'):
                 try:
                     os.remove(file+'.decompressed')
                 except OSError:  
-                    print ("Deletion of temp decompressed file failed:", file+'.decompressed')    
+                    logging.error("Deletion of temp decompressed file failed:", file+'.decompressed')    
             return success
         else:
             return True
@@ -706,7 +722,7 @@ def _manage_pmc_archives(filename):
                     try:
                         shutil.rmtree(os.path.join(thedir,tmp_subdir))
                     except OSError:  
-                        print ("Deletion of tmp dir failed:", os.path.join(thedir,tmp_subdir))     
+                        logging.error("Deletion of tmp dir failed:", os.path.join(thedir,tmp_subdir))     
                     #break
                 if member.isfile() and member.name.endswith(".nxml"):
                     member.name = os.path.basename(member.name)
@@ -722,18 +738,18 @@ def _manage_pmc_archives(filename):
                     try:
                         shutil.rmtree(os.path.join(thedir,tmp_subdir))
                     except OSError:  
-                        print ("Deletion of tmp dir failed:", os.path.join(thedir,tmp_subdir))      
+                        logging.error("Deletion of tmp dir failed:", os.path.join(thedir,tmp_subdir))      
             tar.close()
             if not pdf_found:
-                print("warning: no pdf found in archive:", filename)
+                logging.warning("no pdf found in archive:", filename)
             if os.path.isfile(filename):
                 try:
                     os.remove(filename)
                 except OSError:  
-                    print ("Deletion of PMC archive file failed:", filename) 
+                    logging.error("Deletion of PMC archive file failed:", filename) 
         except Exception as e:
             # a bit of bad practice
-            print("Unexpected error", e)
+            logging.error("Unexpected error", e)
             pass
 
 
@@ -747,21 +763,21 @@ def generate_thumbnail(pdfFile):
     try:
         subprocess.check_call(cmd, shell=True)
     except subprocess.CalledProcessError as e:   
-        print("e.returncode", e.returncode)
+        logging.error("e.returncode", e.returncode)
 
     thumb_file = pdfFile.replace('.pdf', '-thumb-medium.png')
     cmd = 'convert -quiet -density 200 -thumbnail x300 -flatten ' + pdfFile+'[0] ' + thumb_file
     try:
         subprocess.check_call(cmd, shell=True)
     except subprocess.CalledProcessError as e:   
-        print("e.returncode", e.returncode)
+        logging.error("e.returncode", e.returncode)
 
     thumb_file = pdfFile.replace('.pdf', '-thumb-large.png')
     cmd = 'convert -quiet -density 200 -thumbnail x500 -flatten ' + pdfFile+'[0] ' + thumb_file
     try:
         subprocess.check_call(cmd, shell=True)
     except subprocess.CalledProcessError as e:   
-        print("e.returncode", e.returncode)
+        logging.error("e.returncode", e.returncode)
 
 def generateStoragePath(identifier):
     '''
