@@ -609,8 +609,8 @@ def _download_wget(url, filename):
             result = "success"
 
     except subprocess.CalledProcessError as e:   
-        logging.error("e.returncode" + e.returncode)
-        logging.error("e.output" + e.output)
+        logging.error("e.returncode: " + str(e.returncode))
+        logging.error("e.output: " + str(e.output))
         logging.error("wget command was: " + cmd)
         if  e.output is not None:
             error = json.loads(e.output[7:]) # Skip "error: "
