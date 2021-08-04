@@ -118,6 +118,8 @@ class OAHarverster(object):
                 if not buffer: break
                 count += buffer.count(b'\n')
 
+        print("total entries: " + str(count))
+
         if self.sample is not None:
             # random selection corresponding to the requested sample size
             selection = [randint(0, count-1) for p in range(0, sample)]
@@ -200,6 +202,8 @@ class OAHarverster(object):
                 buffer = fp.read(8192*1024)
                 if not buffer: break
                 count += buffer.count(b'\n')
+
+        print("total entries: " + str(count))
 
         if self.sample is not None:
             # random selection corresponding to the requested sample size
