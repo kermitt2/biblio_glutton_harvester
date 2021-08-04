@@ -2,12 +2,11 @@
 
 A small preprocessing script for unpaywall dump file. The idea is to create partitions
 to distribute the processing if required and avoid repeating too many queries on the same 
-domains in the same harvesting batch. 
+domains. 
 
 What is done by the script:
 - skip entries without PDF open access resource
 - distribute the entries with open access resource in n bins/files
-- avoid concentrations/succession of resources from the same domain in the bins
 
 '''
 
@@ -24,17 +23,14 @@ from tqdm import tqdm
 def create_partition(unpaywall, output=None, nb_bins=10):
     # check the overall number of entries based on the line number
     print("\ncalculating number of entries...")
-    '''
+
     count = 0
     with gzip.open(unpaywall, 'rb') as gz:  
         while 1:
             buffer = gz.read(8192*1024)
             if not buffer: break
             count += buffer.count(b'\n')
-    '''
-
-    count = 126388740
-    
+    #count = 126388740   
     print("total of", str(count), "entries")
 
     nb_oa_entries = 0
@@ -70,7 +66,6 @@ def create_partition(unpaywall, output=None, nb_bins=10):
                             current_bin = 0
 
                         nb_oa_entries += 1
-
         position += 1
 
     gz.close()
