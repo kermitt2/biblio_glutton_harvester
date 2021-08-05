@@ -79,7 +79,7 @@ class OAHarverster(object):
             try:  
                 os.makedirs(self.config["data_path"])
             except OSError:  
-                logging.error("Creation of the directory %s failed" % self.config["data_path"])
+                logging.exception("Creation of the directory %s failed" % self.config["data_path"])
             else:  
                 logging.debug("Successfully created the directory %s" % self.config["data_path"])
 
@@ -425,8 +425,8 @@ class OAHarverster(object):
                     if os.path.isfile(thumb_file_large):
                         shutil.copyfile(thumb_file_large, os.path.join(local_dest_path, local_entry['id']+"-thumb-larger.png"))
 
-            except IOError as e:
-                logging.error("invalid path: " + str(e))       
+            except IOError:
+                logging.exception("invalid path")
 
         # clean pdf and thumbnail files
         try:
@@ -441,8 +441,8 @@ class OAHarverster(object):
                     os.remove(thumb_file_medium)
                 if os.path.isfile(thumb_file_large): 
                     os.remove(thumb_file_large)
-        except IOError as e:
-            logging.error("temporary file cleaning failed: " + str(e))       
+        except IOError:
+            logging.exception("temporary file cleaning failed")   
 
 
     def reprocessFailed(self):
@@ -545,8 +545,8 @@ class OAHarverster(object):
             if os.path.isdir(path):
                 try:
                     shutil.rmtree(path)
-                except OSError as e:
-                    logging.error("Error: %s - %s." % (e.filename, e.strerror))
+                except OSError:
+                    logging.exception("Error cleaning tmp files")
 
         # re-init the environments
         self._init_lmdb()
@@ -601,30 +601,24 @@ def _download_wget(url, filename):
                 try:
                     os.remove(filename)
                 except OSError:
-                    logging.error("Deletion of invalid compressed file failed: " + filename) 
+                    logging.exception("Deletion of invalid compressed file failed")
                     result = "fail"
             # ensure cleaning
             if os.path.isfile(filename+'.decompressed'):
                 try:
                     os.remove(filename+'.decompressed')
                 except OSError:  
-                    logging.error("Final deletion of temp decompressed file failed: "+ filename+'.decompressed')    
+                    logging.exception("Final deletion of temp decompressed file failed")
         else:
             result = "success"
 
-    except subprocess.CalledProcessError as e:   
-        logging.error("e.returncode: " + str(e.returncode))
-        logging.error("e.output: " + str(e.output))
+    except subprocess.CalledProcessError as e:  
+        logging.exception("error subprocess wget") 
         logging.error("wget command was: " + cmd)
-        if  e.output is not None:
-            error = json.loads(e.output[7:]) # Skip "error: "
-            logging.error("error code:" + error['code'])
-            logging.error("error message:" + error['message'])
         result = "fail"
 
     except Exception as e:
-        # a bit of bad practice
-        logging.error("Unexpected error wget process: " + str(e))
+        logging.exception("Unexpected error wget process") 
         result = "fail"
 
     return str(result)
@@ -642,7 +636,7 @@ def _download_requests(url, filename):
                 f_out.write(file_data.content)
             result = "success"
     except Exception:
-        logging.error("Download failed for {0} with requests".format(url))
+        logging.exception("Download failed for {0} with requests".format(url))
     return result
 
 def _check_compression(file):
@@ -661,7 +655,7 @@ def _check_compression(file):
                     try:
                         shutil.copyfileobj(f_in, f_out)
                     except OSError:  
-                        logging.error("Decompression file failed: " + f_in)
+                        logging.exception("Decompression file failed")
                     else:
                         success = True
             # replace the file
@@ -669,14 +663,14 @@ def _check_compression(file):
                 try:
                     shutil.copyfile(file+'.decompressed', file)
                 except OSError:  
-                    logging.error("Replacement of decompressed file failed: " + file)
+                    logging.exception("Replacement of decompressed file failed")
                     success = False
             # delete the tmp file
             if os.path.isfile(file+'.decompressed'):
                 try:
                     os.remove(file+'.decompressed')
                 except OSError:  
-                    logging.error("Deletion of temp decompressed file failed: " + file+'.decompressed')    
+                    logging.exception("Deletion of temp decompressed file failed")    
             return success
         else:
             return True
@@ -729,7 +723,7 @@ def _manage_pmc_archives(filename):
                     try:
                         shutil.rmtree(os.path.join(thedir,tmp_subdir))
                     except OSError:  
-                        logging.error("Deletion of tmp dir failed: " + os.path.join(thedir,tmp_subdir))     
+                        logging.exception("Deletion of tmp dir failed: " + os.path.join(thedir,tmp_subdir))     
                     #break
                 if member.isfile() and member.name.endswith(".nxml"):
                     member.name = os.path.basename(member.name)
@@ -745,7 +739,7 @@ def _manage_pmc_archives(filename):
                     try:
                         shutil.rmtree(os.path.join(thedir,tmp_subdir))
                     except OSError:  
-                        logging.error("Deletion of tmp dir failed: " + os.path.join(thedir,tmp_subdir))      
+                        logging.exception("Deletion of tmp dir failed: " + os.path.join(thedir,tmp_subdir))      
             tar.close()
             if not pdf_found:
                 logging.warning("no pdf found in archive: " + filename)
@@ -753,10 +747,9 @@ def _manage_pmc_archives(filename):
                 try:
                     os.remove(filename)
                 except OSError:  
-                    logging.error("Deletion of PMC archive file failed: " + filename) 
+                    logging.exception("Deletion of PMC archive file failed: " + filename) 
         except Exception as e:
-            # a bit of bad practice
-            logging.error("Unexpected error " + str(e))
+            logging.exception("Unexpected error")
             pass
 
 
@@ -770,21 +763,21 @@ def generate_thumbnail(pdfFile):
     try:
         subprocess.check_call(cmd, shell=True)
     except subprocess.CalledProcessError as e:   
-        logging.error("e.returncode: " + e.returncode)
+        logging.exception("error thumb-small.png")
 
     thumb_file = pdfFile.replace('.pdf', '-thumb-medium.png')
     cmd = 'convert -quiet -density 200 -thumbnail x300 -flatten ' + pdfFile+'[0] ' + thumb_file
     try:
         subprocess.check_call(cmd, shell=True)
     except subprocess.CalledProcessError as e:   
-        logging.error("e.returncode: " + e.returncode)
+        logging.exception("error thumb-small.png")
 
     thumb_file = pdfFile.replace('.pdf', '-thumb-large.png')
     cmd = 'convert -quiet -density 200 -thumbnail x500 -flatten ' + pdfFile+'[0] ' + thumb_file
     try:
         subprocess.check_call(cmd, shell=True)
     except subprocess.CalledProcessError as e:   
-        logging.error("e.returncode " + e.returncode)
+        logging.exception("error thumb-small.png")
 
 def generateStoragePath(identifier):
     '''
