@@ -624,7 +624,7 @@ def _download_wget(url, filename):
 
     except Exception as e:
         # a bit of bad practice
-        logging.error("Unexpected error wget process: " + e)
+        logging.error("Unexpected error wget process: " + str(e))
         result = "fail"
 
     return str(result)
@@ -756,7 +756,7 @@ def _manage_pmc_archives(filename):
                     logging.error("Deletion of PMC archive file failed: " + filename) 
         except Exception as e:
             # a bit of bad practice
-            logging.error("Unexpected error " + e)
+            logging.error("Unexpected error " + str(e))
             pass
 
 
