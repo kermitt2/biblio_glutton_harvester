@@ -633,7 +633,7 @@ def _download_requests(url, filename):
     """ 
     Download with Python requests which handle well compression, but not very robust and bad parallelization
     """
-    HEADERS = {"""User-Agent""": """Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0"""}
+    HEADERS = {"""User-Agent""": """Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:81.0) Gecko/20100101 Firefox/81.0"""}
     result = "fail" 
     try:
         file_data = requests.get(url, allow_redirects=True, headers=HEADERS, verify=False, timeout=15)
