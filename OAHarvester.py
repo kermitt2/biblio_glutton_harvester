@@ -466,38 +466,43 @@ class OAHarverster(object):
         
         print("number of failed entries with OA link:", nb_fails, "out of", nb_total, "entries")
 
-        # iterate over the fail lmdb
-        with self.env.begin(write=True) as txn:
-            cursor = txn.cursor()
-            for key, value in cursor:
-                if i == batch_size_pdf:
-                    self.processBatchReprocess(urls, filenames, entries)#, txn, txn_doi, txn_fail)
-                    # reinit
-                    i = 0
-                    urls = []
-                    entries = []
-                    filenames = []
-                    n += batch_size_pdf
+        with tqdm(total=nb_fails) as pbar: 
+            # iterate over the fail lmdb
+            with self.env.begin(write=True) as txn:
+                cursor = txn.cursor()
+                total_processed = 0
+                for key, value in cursor:
+                    if i == batch_size_pdf:
+                        self.processBatchReprocess(urls, filenames, entries)#, txn, txn_doi, txn_fail)
+                        # reinit
+                        i = 0
+                        urls = []
+                        entries = []
+                        filenames = []
+                        n += batch_size_pdf
+                        pbar.update(total_processed)
 
-                with self.env_fail.begin() as txn_f:
-                    value_error = txn_f.get(key)
-                    if value_error is None:
-                       continue
+                    with self.env_fail.begin() as txn_f:
+                        value_error = txn_f.get(key)
+                        if value_error is None:
+                           continue
 
-                local_entry = _deserialize_pickle(value)
-                pdf_url = local_entry['best_oa_location']['url_for_pdf']  
-                #print(pdf_url)
-                urls.append(pdf_url)
-                entries.append(local_entry)
-                if pdf_url.endswith(".tar.gz"):
-                    filenames.append(os.path.join(self.config["data_path"], local_entry['id']+".tar.gz"))
-                else:  
-                    filenames.append(os.path.join(self.config["data_path"], local_entry['id']+".pdf"))
-                i += 1
+                    local_entry = _deserialize_pickle(value)
+                    pdf_url = local_entry['best_oa_location']['url_for_pdf']  
+                    #print(pdf_url)
+                    urls.append(pdf_url)
+                    entries.append(local_entry)
+                    if pdf_url.endswith(".tar.gz"):
+                        filenames.append(os.path.join(self.config["data_path"], local_entry['id']+".tar.gz"))
+                    else:  
+                        filenames.append(os.path.join(self.config["data_path"], local_entry['id']+".pdf"))
+                    i += 1
+                    total_processed += 1
 
-        # we need to process the latest incomplete batch (if not empty)
-        if len(urls)>0:
-            self.processBatchReprocess(urls, filenames, entries)#, txn, txn_doi, txn_fail)
+            # we need to process the latest incomplete batch (if not empty)
+            if len(urls)>0:
+                self.processBatchReprocess(urls, filenames, entries)
+                pbar.update(total_processed)
 
     def dump(self, dump_file):
         # init lmdb transactions
@@ -797,7 +802,6 @@ if __name__ == "__main__":
     parser.add_argument("--dump", default="dump.json", help="write all JSON entries having a sucessful OA link with their UUID") 
     parser.add_argument("--reprocess", action="store_true", help="reprocessed failed entries with OA link") 
     parser.add_argument("--reset", action="store_true", help="ignore previous processing states, and re-init the harvesting process from the beginning") 
-    parser.add_argument("--increment", action="store_true", help="augment an existing harvesting with a new released Unpaywall dataset (gzipped)") 
     parser.add_argument("--thumbnail", action="store_true", help="generate thumbnail files for the front page of the PDF") 
     parser.add_argument("--sample", type=int, default=None, help="Harvest only a random sample of indicated size")
 
