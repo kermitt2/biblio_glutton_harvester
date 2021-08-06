@@ -569,9 +569,9 @@ def _deserialize_pickle(serialized):
 
 
 def _download(url, filename, entry):
-    result = _download_wget(url, filename)
+    result = _download_requests(url, filename)
     if result != "success":
-        result = _download_requests(url, filename)
+        result = _download_wget(url, filename)
 
     if os.path.isfile(filename) and filename.endswith(".tar.gz"):
         _manage_pmc_archives(filename)
@@ -614,7 +614,7 @@ def _download_wget(url, filename):
 
     except subprocess.CalledProcessError as e:  
         logging.exception("error subprocess wget") 
-        logging.error("wget command was: " + cmd)
+        #logging.error("wget command was: " + cmd)
         result = "fail"
 
     except Exception as e:
@@ -630,7 +630,7 @@ def _download_requests(url, filename):
     HEADERS = {"""User-Agent""": """Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:81.0) Gecko/20100101 Firefox/81.0"""}
     result = "fail" 
     try:
-        file_data = requests.get(url, allow_redirects=True, headers=HEADERS, verify=False, timeout=15)
+        file_data = requests.get(url, allow_redirects=True, headers=HEADERS, verify=False, timeout=20)
         if file_data.status_code == 200:
             with open(filename, 'wb') as f_out:
                 f_out.write(file_data.content)
