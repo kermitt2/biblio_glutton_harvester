@@ -381,7 +381,7 @@ class OAHarverster(object):
         if self.thumbnail:
             generate_thumbnail(local_filename)
         
-        dest_path = generateStoragePath(local_entry['id'])
+        dest_path = os.path.join(generateStoragePath(local_entry['id']), local_entry['id'])
         thumb_file_small = local_filename.replace('.pdf', '-thumb-small.png')
         thumb_file_medium = local_filename.replace('.pdf', '-thumb-medium.png')
         thumb_file_large = local_filename.replace('.pdf', '-thumb-large.png')
