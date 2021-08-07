@@ -382,6 +382,9 @@ class OAHarverster(object):
             generate_thumbnail(local_filename)
         
         dest_path = os.path.join(generateStoragePath(local_entry['id']), local_entry['id'])
+
+        print(dest_path)
+
         thumb_file_small = local_filename.replace('.pdf', '-thumb-small.png')
         thumb_file_medium = local_filename.replace('.pdf', '-thumb-medium.png')
         thumb_file_large = local_filename.replace('.pdf', '-thumb-large.png')
@@ -408,6 +411,8 @@ class OAHarverster(object):
             # save under local storate indicated by data_path in the config json
             try:
                 local_dest_path = os.path.join(self.config["data_path"], dest_path)
+
+                print(dest_path)
 
                 os.makedirs(os.path.dirname(local_dest_path), exist_ok=True)
                 if os.path.isfile(local_filename):
@@ -789,7 +794,7 @@ def generateStoragePath(identifier):
     Convert a file name into a path with file prefix as directory paths:
     123456789 -> 12/34/56/123456789
     '''
-    return os.path.join(identifier[:2], identifier[2:4], identifier[4:6], identifier[6:8], "")
+    return os.path.join(identifier[:2], identifier[2:4], identifier[4:6], identifier[6:8])
 
 def test():
     harvester = OAHarverster()
