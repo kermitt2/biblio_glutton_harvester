@@ -36,7 +36,7 @@ This version uses the standard ThreadPoolExecutor for parallelizing the download
 Given the limits of ThreadPoolExecutor (input stored in memory, blocking Executor.map until the whole input
 is processed and output stored in memory until all input is consumed), it works with batches of PDF of a size 
 indicated in the config.json file (default is 100 entries). We are moving from first batch to the second one 
-only when the first is entirely processed. 
+only when the first is entirely processed. This process is not CPU bounded so threads are okay. 
 
 '''
 class OAHarverster(object):
@@ -279,7 +279,7 @@ class OAHarverster(object):
 
     def processBatch(self, urls, filenames, entries):#, txn, txn_doi, txn_fail):
         with ThreadPoolExecutor(max_workers=12) as executor:
-            results = executor.map(_download, urls, filenames, entries)
+            results = executor.map(_download, urls, filenames, entries, timeout=30)
 
         # LMDB write transaction must be performed in the thread that created the transaction, so
         # we need to have the following lmdb updates out of the paralell process
@@ -335,12 +335,12 @@ class OAHarverster(object):
 
         # finally we can parallelize the thumbnail/upload/file cleaning steps for this batch
         with ThreadPoolExecutor(max_workers=12) as executor:
-            results = executor.map(self.manageFiles, entries)
+            results = executor.map(self.manageFiles, entries, timeout=30)
 
 
     def processBatchReprocess(self, urls, filenames, entries):#, txn, txn_doi, txn_fail):
         with ThreadPoolExecutor(max_workers=12) as executor:
-            results = executor.map(_download, urls, filenames, entries)
+            results = executor.map(_download, urls, filenames, entries, timeout=50)
         
         # LMDB write transactions in the thread that created the transaction
         entries = []
@@ -366,7 +366,7 @@ class OAHarverster(object):
 
         # finally we can parallelize the thumbnail/upload/file cleaning steps for this batch
         with ThreadPoolExecutor(max_workers=12) as executor:
-            results = executor.map(self.manageFiles, entries)
+            results = executor.map(self.manageFiles, entries, timeout=30)
 
 
     def getUUIDByDoi(self, doi):
