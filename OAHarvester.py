@@ -382,9 +382,6 @@ class OAHarverster(object):
             generate_thumbnail(local_filename)
         
         dest_path = os.path.join(generateStoragePath(local_entry['id']), local_entry['id'])
-
-        print(dest_path)
-
         thumb_file_small = local_filename.replace('.pdf', '-thumb-small.png')
         thumb_file_medium = local_filename.replace('.pdf', '-thumb-medium.png')
         thumb_file_large = local_filename.replace('.pdf', '-thumb-large.png')
@@ -412,9 +409,7 @@ class OAHarverster(object):
             try:
                 local_dest_path = os.path.join(self.config["data_path"], dest_path)
 
-                print(dest_path)
-
-                os.makedirs(os.path.dirname(local_dest_path), exist_ok=True)
+                os.makedirs(local_dest_path, exist_ok=True)
                 if os.path.isfile(local_filename):
                     shutil.copyfile(local_filename, os.path.join(local_dest_path, local_entry['id']+".pdf"))
                 if os.path.isfile(local_filename_nxml):
@@ -640,7 +635,7 @@ def _download_requests(url, filename):
     HEADERS = {"""User-Agent""": """Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:81.0) Gecko/20100101 Firefox/81.0"""}
     result = "fail" 
     try:
-        file_data = requests.get(url, allow_redirects=True, headers=HEADERS, verify=False, timeout=20)
+        file_data = requests.get(url, allow_redirects=True, headers=HEADERS, verify=False, timeout=30)
         if file_data.status_code == 200:
             with open(filename, 'wb') as f_out:
                 f_out.write(file_data.content)
