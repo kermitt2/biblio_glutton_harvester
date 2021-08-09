@@ -63,7 +63,7 @@ class OAHarverster(object):
         self.sample = sample
 
         self.s3 = None
-        if self.config["bucket_name"] is not None and len(self.config["bucket_name"]) is not 0:
+        if "bucket_name" in self.config and len(self.config["bucket_name"].strip()) > 0:
             self.s3 = S3.S3(self.config)
 
     def _load_config(self, path='./config.json'):
@@ -99,7 +99,11 @@ class OAHarverster(object):
         download in parallel PDF, generate thumbnails (if selected), upload resources locally 
         or on S3 and update the json description of the entries
         """
-        batch_size_pdf = self.config['batch_size']
+        if 'batch_size' in self.config:
+            batch_size_pdf = self.config['batch_size']
+        else:
+            batch_size_pdf = 100
+
         # batch size for lmdb commit
         batch_size_lmdb = 10 
         n = 0
@@ -117,7 +121,6 @@ class OAHarverster(object):
                 buffer = gz.read(8192*1024)
                 if not buffer: break
                 count += buffer.count(b'\n')
-
         print("total entries: " + str(count))
 
         if self.sample is not None:
@@ -182,7 +185,11 @@ class OAHarverster(object):
         or download the list file on NIH server if not provided, download in parallel PDF, generate thumbnails, 
         upload resources on S3 and update the json description of the entries
         """
-        batch_size_pdf = self.config['batch_size']
+        if 'batch_size' in self.config:
+            batch_size_pdf = self.config['batch_size']
+        else:
+            batch_size_pdf = 100
+
         pmc_base = self.config['pmc_base']
         # batch size for lmdb commit
         batch_size_lmdb = 10 
@@ -282,7 +289,7 @@ class OAHarverster(object):
             results = executor.map(_download, urls, filenames, entries, timeout=30)
 
         # LMDB write transaction must be performed in the thread that created the transaction, so
-        # we need to have the following lmdb updates out of the paralell process
+        # better to have the following lmdb updates out of the paralell process
         entries = []
         for result in results:
             local_entry = result[1]
@@ -379,7 +386,10 @@ class OAHarverster(object):
 
         # generate thumbnails
         if self.thumbnail:
-            generate_thumbnail(local_filename)
+            try:
+                generate_thumbnail(local_filename)
+            except:
+                logging.exception("error with thumbnail generation: " + local_entry['id'])
         
         dest_path = os.path.join(generateStoragePath(local_entry['id']), local_entry['id'])
         thumb_file_small = local_filename.replace('.pdf', '-thumb-small.png')
