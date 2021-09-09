@@ -1,26 +1,25 @@
-import boto3
-import botocore
-import sys
-import os
-import shutil
+import argparse
 import gzip
 import json
-import magic
-import requests
-import pickle
-import lmdb
-import uuid
-import subprocess
-import argparse
-import time
-import S3
-from concurrent.futures import ThreadPoolExecutor
-import subprocess
-import tarfile
-from random import randint
-from tqdm import tqdm
 import logging
 import logging.handlers
+import os
+import pickle
+import shutil
+import subprocess
+import sys
+import tarfile
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from random import randint
+
+import lmdb
+import magic
+import requests
+from tqdm import tqdm
+
+import S3
 
 map_size = 100 * 1024 * 1024 * 1024 
 logging.basicConfig(filename='harvester.log', filemode='w', level=logging.DEBUG)
@@ -96,7 +95,7 @@ class OAHarverster(object):
     def harvestUnpaywall(self, filepath):   
         """
         Main method, use the Unpaywall dataset for getting pdf url for Open Access resources, 
-        download in parallel PDF, generate thumbnails (if selected), upload resources locally 
+        download in parallel PDF, generate thumbnails (if selected), upload resources locally
         or on S3 and update the json description of the entries
         """
         if 'batch_size' in self.config:
@@ -219,7 +218,7 @@ class OAHarverster(object):
 
         with open(filepath, 'rt') as fp:  
             position = 0
-            for line in tqdm(gz, total=count):
+            for line in tqdm(fp, total=count):
                 if selection is not None and not position in selection:
                     position += 1
                     continue
@@ -405,7 +404,7 @@ class OAHarverster(object):
             if os.path.isfile(local_filename_nxml):
                 self.s3.upload_file_to_s3(local_filename_nxml, dest_path, storage_class='ONEZONE_IA')
 
-            if (self.thumbnail):
+            if self.thumbnail:
                 if os.path.isfile(thumb_file_small):
                     self.s3.upload_file_to_s3(thumb_file_small, dest_path, storage_class='ONEZONE_IA')
 
@@ -415,25 +414,63 @@ class OAHarverster(object):
                 if os.path.isfile(thumb_file_large): 
                     self.s3.upload_file_to_s3(thumb_file_large, dest_path, storage_class='ONEZONE_IA')
         else:
-            # save under local storate indicated by data_path in the config json
+            # save under local storage indicated by data_path in the config json
             try:
                 local_dest_path = os.path.join(self.config["data_path"], dest_path)
 
                 os.makedirs(local_dest_path, exist_ok=True)
                 if os.path.isfile(local_filename):
-                    shutil.copyfile(local_filename, os.path.join(local_dest_path, local_entry['id']+".pdf"))
+                    if 'pmcid' in local_entry:
+                        shutil.copyfile(local_filename, os.path.join(local_dest_path, local_entry['id'] + '_' + local_entry['pmcid'] + ".pdf"))
+                    elif 'pmid' in local_entry:
+                        shutil.copyfile(local_filename, os.path.join(local_dest_path,
+                                                                     local_entry['id'] + '_' + local_entry[
+                                                                         'pmid'] + ".pdf"))
+                    else: 
+                        shutil.copyfile(local_filename, os.path.join(local_dest_path, local_entry['id'] + ".pdf"))
                 if os.path.isfile(local_filename_nxml):
-                    shutil.copyfile(local_filename_nxml, os.path.join(local_dest_path, local_entry['id']+".nxml"))
+                    if 'pmcid' in local_entry:
+                        shutil.copyfile(local_filename_nxml, os.path.join(local_dest_path, local_entry['id'] + '_' + local_entry['pmcid'] + ".nxml"))
+                    elif 'pmid' in local_entry:
+                        shutil.copyfile(local_filename_nxml, os.path.join(local_dest_path,
+                                                                          local_entry['id'] + '_' + local_entry[
+                                                                              'pmid'] + ".nxml"))
+                    else: 
+                        shutil.copyfile(local_filename_nxml, os.path.join(local_dest_path, local_entry['id'] + ".nxml"))
 
-                if (self.thumbnail):
+                if self.thumbnail:
                     if os.path.isfile(thumb_file_small):
-                        shutil.copyfile(thumb_file_small, os.path.join(local_dest_path, local_entry['id']+"-thumb-small.png"))
+                        if 'pmcid' in local_entry:
+                            shutil.copyfile(thumb_file_small,
+                                            os.path.join(local_dest_path, local_entry['id'] + '_' + local_entry['pmcid'] + "-thumb-small.png"))
+                        elif 'pmid' in local_entry:
+                            shutil.copyfile(thumb_file_small,
+                                            os.path.join(local_dest_path, local_entry['id'] + '_' + local_entry[
+                                                'pmid'] + "-thumb-small.png"))
+                        else:
+                            shutil.copyfile(thumb_file_small, os.path.join(local_dest_path, local_entry['id'] + "-thumb-small.png"))
 
                     if os.path.isfile(thumb_file_medium):
-                        shutil.copyfile(thumb_file_medium, os.path.join(local_dest_path, local_entry['id']+"-thumb-medium.png"))
+                        if 'pmcid' in local_entry:
+                            shutil.copyfile(thumb_file_small,
+                                            os.path.join(local_dest_path, local_entry['id'] + '_' + local_entry['pmcid'] + "-thumb-medium.png"))
+                        elif 'pmid' in local_entry:
+                            shutil.copyfile(thumb_file_small,
+                                            os.path.join(local_dest_path, local_entry['id'] + '_' + local_entry[
+                                                'pmid'] + "-thumb-medium.png"))
+                        else:
+                            shutil.copyfile(thumb_file_medium, os.path.join(local_dest_path, local_entry['id'] + "-thumb-medium.png"))
 
                     if os.path.isfile(thumb_file_large):
-                        shutil.copyfile(thumb_file_large, os.path.join(local_dest_path, local_entry['id']+"-thumb-larger.png"))
+                        if 'pmcid' in local_entry:
+                            shutil.copyfile(thumb_file_small,
+                                            os.path.join(local_dest_path, local_entry['id'] + '_' + local_entry['pmcid'] + "-thumb-larger.png"))
+                        elif 'pmid' in local_entry:
+                            shutil.copyfile(thumb_file_small,
+                                            os.path.join(local_dest_path, local_entry['id'] + '_' + local_entry[
+                                                'pmid'] + "-thumb-larger.png"))
+                        else:
+                            shutil.copyfile(thumb_file_large, os.path.join(local_dest_path, local_entry['id'] + "-thumb-larger.png"))
 
             except IOError:
                 logging.exception("invalid path")
@@ -444,7 +481,7 @@ class OAHarverster(object):
                 os.remove(local_filename)
             if os.path.isfile(local_filename_nxml):
                 os.remove(local_filename_nxml)
-            if (self.thumbnail):
+            if self.thumbnail:
                 if os.path.isfile(thumb_file_small): 
                     os.remove(thumb_file_small)
                 if os.path.isfile(thumb_file_medium): 
@@ -584,8 +621,12 @@ def _deserialize_pickle(serialized):
 
 
 def _download(url, filename, entry):
-    result = _download_requests(url, filename)
-    if result != "success":
+    # Apparently requests does not support FTP
+    if not url.startswith("ftp://"):
+        result = _download_requests(url, filename)
+        if result != "success":
+            result = _download_wget(url, filename)
+    else:
         result = _download_wget(url, filename)
 
     if os.path.isfile(filename) and filename.endswith(".tar.gz"):
@@ -804,6 +845,7 @@ def generateStoragePath(identifier):
 def test():
     harvester = OAHarverster()
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = "Open Access PDF harvester")
     parser.add_argument("--unpaywall", default=None, help="path to the Unpaywall dataset (gzipped)") 
@@ -833,18 +875,32 @@ if __name__ == "__main__":
 
     start_time = time.time()
 
+    error = None
     if reprocess:
         harvester.reprocessFailed()
         harvester.diagnostic()
-    elif unpaywall is not None: 
-        harvester.harvestUnpaywall(unpaywall)
-        harvester.diagnostic()
-    elif pmc is not None: 
-        harvester.harvestPMC(pmc)
-        harvester.diagnostic()
+    elif unpaywall is not None:
+        if not os.path.exists(unpaywall):
+            error = "Unpaywall archive " + str(unpaywall) + " does not exists. "
+        else:
+            harvester.harvestUnpaywall(unpaywall)
+            harvester.diagnostic()
+    elif pmc is not None:
+        if not os.path.exists(pmc):
+            error = "PMC reference " + str(pmc) + " does not exists. "
+        else:
+            harvester.harvestPMC(pmc)
+            harvester.diagnostic()
+    else:
+        error = "Missing --reprocess or --unpaywall or --pmc parameters."
+
+    if error:
+        print(error)
+        print("Use --help for more information on the usage. ")
+        sys.exit(-1)
 
     runtime = round(time.time() - start_time, 3)
-    print("runtime: %s seconds " % (runtime))
+    print("runtime: %s seconds " % runtime)
 
     if dump is not None:
         harvester.dump(dump)
