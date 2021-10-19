@@ -5,5 +5,8 @@
     "bucket_name": "",
     "region": "",
     "batch_size": 100,
-    "pmc_base": "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/"
+    "pmc_base": "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/",
+    "biblio_glutton_base": "", 
+    "crossref_base": "https://api.crossref.org",
+    "crossref_email": ""
 }

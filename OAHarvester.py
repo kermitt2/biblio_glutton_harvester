@@ -17,7 +17,7 @@ import S3
 from concurrent.futures import ThreadPoolExecutor
 import subprocess
 import tarfile
-from random import randint
+from random import randint, choices
 from tqdm import tqdm
 import logging
 import logging.handlers
@@ -36,8 +36,7 @@ This version uses the standard ThreadPoolExecutor for parallelizing the download
 Given the limits of ThreadPoolExecutor (input stored in memory, blocking Executor.map until the whole input
 is processed and output stored in memory until all input is consumed), it works with batches of PDF of a size 
 indicated in the config.json file (default is 100 entries). We are moving from first batch to the second one 
-only when the first is entirely processed. This process is not CPU bounded so threads are okay. 
-
+only when the first is entirely processed. The harvesting process is not CPU bounded so using threads is okay. 
 '''
 class OAHarverster(object):
 
@@ -151,7 +150,7 @@ class OAHarverster(object):
             doi = entry['doi']
 
             # check if the entry has already been processed
-            if self.getUUIDByDoi(doi) is not None:
+            if self.getUUIDByIdentifier(doi) is not None:
                 position += 1
                 continue
 
@@ -253,7 +252,7 @@ class OAHarverster(object):
                     continue
 
                 # check if the entry has already been processed
-                if self.getUUIDByDoi(pmcid) is not None:
+                if self.getUUIDByIdentifier(pmcid) is not None:
                     position += 1
                     continue
 
@@ -376,13 +375,25 @@ class OAHarverster(object):
             results = executor.map(self.manageFiles, entries, timeout=30)
 
 
-    def getUUIDByDoi(self, doi):
+    def getUUIDByIdentifier(self, identifier):
         txn = self.env_doi.begin()
-        return txn.get(doi.encode(encoding='UTF-8'))
+        return txn.get(identifier.encode(encoding='UTF-8'))
 
     def manageFiles(self, local_entry):
         local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
         local_filename_nxml = os.path.join(self.config["data_path"], local_entry['id']+".nxml")
+
+        # for metadata
+        local_filename_json = os.path.join(self.config["data_path"], local_entry['id']+".json")
+
+        # optional biblio-glutton look-up
+        glutton_record = self.biblio_glutton_lookup(doi=local_entry['doi'],
+                                                    pmcid=local_entry['pmicd'],
+                                                    pmid=local_entry['pmid'],
+                                                    istex_id=None,
+                                                    istex_ark=None)
+        if glutton_record != None:
+            local_entry["glutton"] = glutton_record
 
         # generate thumbnails
         if self.thumbnail:
@@ -404,6 +415,8 @@ class OAHarverster(object):
                 self.s3.upload_file_to_s3(local_filename, dest_path, storage_class='ONEZONE_IA')
             if os.path.isfile(local_filename_nxml):
                 self.s3.upload_file_to_s3(local_filename_nxml, dest_path, storage_class='ONEZONE_IA')
+            if os.path.isfile(local_filename_json):
+                self.s3.upload_file_to_s3(local_filename_json, dest_path, storage_class='ONEZONE_IA')
 
             if (self.thumbnail):
                 if os.path.isfile(thumb_file_small):
@@ -424,6 +437,8 @@ class OAHarverster(object):
                     shutil.copyfile(local_filename, os.path.join(local_dest_path, local_entry['id']+".pdf"))
                 if os.path.isfile(local_filename_nxml):
                     shutil.copyfile(local_filename_nxml, os.path.join(local_dest_path, local_entry['id']+".nxml"))
+                if os.path.isfile(local_filename_json):
+                    shutil.copyfile(local_filename_json, os.path.join(local_dest_path, local_entry['id']+".json"))
 
                 if (self.thumbnail):
                     if os.path.isfile(thumb_file_small):
@@ -444,6 +459,8 @@ class OAHarverster(object):
                 os.remove(local_filename)
             if os.path.isfile(local_filename_nxml):
                 os.remove(local_filename_nxml)
+            if os.path.isfile(local_filename_json):
+                os.remove(local_filename_json)
             if (self.thumbnail):
                 if os.path.isfile(thumb_file_small): 
                     os.remove(thumb_file_small)
@@ -576,12 +593,78 @@ class OAHarverster(object):
         nb_total = txn.stat()['entries']
         print("number of failed entries with OA link:", nb_fails, "out of", nb_total, "entries")
 
+    def biblio_glutton_lookup(self, doi=None, pmcid=None, pmid=None, istex_id=None, istex_ark=None):
+        """
+        Lookup on biblio_glutton with the provided strong identifiers, return the full agregated biblio_glutton record.
+        This allows to optionally enrich downloaded article with Glutton's aggregated metadata. 
+        """
+        if not "biblio_glutton_base" in self.config or len(self.config["biblio_glutton_base"]) == 0:
+            return None
+
+        biblio_glutton_url = _biblio_glutton_url(self.config["biblio_glutton_base"], None)
+        success = False
+        jsonResult = None
+
+        if doi is not None and len(doi)>0:
+            response = requests.get(biblio_glutton_url, params={'doi': doi}, verify=False, timeout=5)
+            success = (response.status_code == 200)
+            if success:
+                jsonResult = response.json()
+
+        if not success and pmid is not None and len(pmid)>0:
+            response = requests.get(biblio_glutton_url + "pmid=" + pmid, verify=False, timeout=5)
+            success = (response.status_code == 200)
+            if success:
+                jsonResult = response.json()     
+
+        if not success and pmcid is not None and len(pmcid)>0:
+            response = requests.get(biblio_glutton_url + "pmc=" + pmcid, verify=False, timeout=5)  
+            success = (response.status_code == 200)
+            if success:
+                jsonResult = response.json()
+
+        if not success and istex_id is not None and len(istex_id)>0:
+            response = requests.get(biblio_glutton_url + "istexid=" + istex_id, verify=False, timeout=5)
+            success = (response.status_code == 200)
+            if success:
+                jsonResult = response.json()
+        
+        if not success and doi is not None and len(doi)>0:
+            # let's call crossref as fallback for possible X-months gap in biblio-glutton
+            # https://api.crossref.org/works/10.1037/0003-066X.59.1.29
+            user_agent = {'User-agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:81.0) Gecko/20100101 Firefox/81.0 (mailto:' 
+                + self.config['crossref_email'] + ')'} 
+            response = requests.get(self.config['crossref_base']+"/works/"+doi, headers=user_agent, verify=False, timeout=5)
+            if response.status_code == 200:
+                jsonResult = response.json()['message']
+                # filter out references and re-set doi, in case there are obtained via crossref
+                if "reference" in jsonResult:
+                    del jsonResult["reference"]
+            else:
+                success = False
+                jsonResult = None
+        
+        return jsonResult
+
+def _get_random_user_agent():
+    '''
+    This is a simple random/rotating user agent covering different devices and web clients/browsers
+    Note: rotating the user agent without rotating the IP address (via proxies) might not be a good idea if the same server
+    is harvested - but in our case we are harvesting a large variety of different Open Access servers
+    '''
+    user_agents = ["Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:81.0) Gecko/20100101 Firefox/81.0",
+                   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36",
+                   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36"]
+    weights = [0.2, 0.3, 0.5]
+    user_agent = choices(user_agents, weights=weights, k=1)
+
+    return user_agent
+
 def _serialize_pickle(a):
     return pickle.dumps(a)
 
 def _deserialize_pickle(serialized):
     return pickle.loads(serialized)
-
 
 def _download(url, filename, entry):
     result = _download_requests(url, filename)
@@ -595,15 +678,20 @@ def _download(url, filename, entry):
 
 def _download_wget(url, filename):
     """ 
-    First try with Python requests (which handle well compression), then move to a more robust download approach
+    Normally we first try with Python requests (which handle well compression), then move to a more robust download approach, 
+    via external wget.
+    The drawback of wget is the compression support. It is uncertain depending on the linux distribution 
+    (https://unix.stackexchange.com/a/464375) and experimental. So in the following, we keep compression disable and we
+    manage the decompression in a second step after checking the mime type of the downloaded file.
     """
     result = "fail"
     # This is the most robust and reliable way to download files I found with Python... to rely on system wget :)
     #cmd = "wget -c --quiet" + " -O " + filename + ' --connect-timeout=10 --waitretry=10 ' + \
     cmd = "wget -c --quiet" + " -O " + filename + ' --timeout=15 --waitretry=0 --tries=5 --retry-connrefused ' + \
-        '--header="User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:81.0) Gecko/20100101 Firefox/81.0" ' + \
+        '--header="User-Agent: ' + _get_random_user_agent()+ '" ' + \
         '--header="Accept: application/pdf, text/html;q=0.9,*/*;q=0.8" --header="Accept-Encoding: gzip, deflate" ' + \
         '--no-check-certificate ' + \
+        #'--compression=auto ' + \
         '"' + url + '"'
     try:
         result = subprocess.check_call(cmd, shell=True)
@@ -793,6 +881,15 @@ def generate_thumbnail(pdfFile):
         subprocess.check_call(cmd, shell=True)
     except subprocess.CalledProcessError as e:   
         logging.exception("error thumb-small.png")
+
+def _biblio_glutton_url(biblio_glutton_base, biblio_glutton_port):
+    if biblio_glutton_base.endswith("/"):
+        res = biblio_glutton_base[:-1]
+    else: 
+        res = biblio_glutton_base
+    if biblio_glutton_port is not None and len(biblio_glutton_port)>0:
+        res += ":"+biblio_glutton_port
+    return res+"/service/lookup?"
 
 def generateStoragePath(identifier):
     '''

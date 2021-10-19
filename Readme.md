@@ -2,15 +2,17 @@
 
 Python utility for harvesting efficiently a large Open Access collection of PDF: 
 
-* Uploaded PDF can be stored either on an Amazon S3 bucket or in a local storage. 
+* Downloaded PDF can be stored either on an Amazon S3 bucket or in a local storage, with UUID renaming. 
 
-* Downloads and uploads over HTTP are multi-threaded for best robustness and efficiency. 
+* Downloads and storage uploads over HTTP(S) are multi-threaded for best robustness and efficiency. 
 
-* Download supports redirections, https protocol and uses robust request headers. 
+* Download supports redirections, https protocol and uses rotating request headers. 
 
 * The harvesting process can be interrupted and resumed.
 
 * The tool is fault tolerant, it will keep track of the failed resource access with corresponding errors and makes possible subsequent retry on this subset. 
+
+* Optionally, aggregated metadata from biblio-glutton for an article are accessed and stored with the other resources. 
 
 * As a bonus, image thumbnails of the front page of the PDF are created and stored with the PDF.
 
@@ -20,7 +22,7 @@ The utility can be used in particular to harvest the **Unpaywall** dataset and t
 
 ## Requirements
 
-The utility has been tested with Python 3.5. It is developed for a deployment on a POSIX/Linux server (it uses `imagemagick` as external process to generate thumbnails and `wget`). An S3 account and bucket must have been created for non-local storage of the data collection. 
+The utility requires Python 3.6 or more. It is developed for a deployment on a POSIX/Linux server (it uses `imagemagick` as external process to generate thumbnails and `wget`). An S3 account and bucket must have been created for non-local storage of the data collection. 
 
 ## Install
 
@@ -44,7 +46,17 @@ For generating thumbnails corresponding to the harvested PDF, ImageMagick must b
 
 > apt-get install imagemagick
 
-A configuration file must be completed, by default the file `config.json` will be used, but it is also possible to use it as a template and specifies a particular configuration file when using the tool. In the configuration file, the information related to the S3 bucket to be used for uploading the resources must be filed, otherwise the resources will be stored locally in the indicated `data_path`. `batch_size` gives the number of PDF that is considered for parallel process at the same time, the process will move to a new batch only when all the PDF of the previous batch will be processed.  
+## Configuration
+
+A configuration file must be completed, by default the file `config.json` will be used, but it is also possible to use it as a template and specifies a particular configuration file when using the tool. 
+
+- In the configuration file, the information related to the S3 bucket to be used for uploading the resources must be filed, otherwise the resources will be stored locally in the indicated `data_path`. 
+
+- `batch_size` gives the number of PDF that is considered for parallel process at the same time, the process will move to a new batch only when all the PDF of the previous batch will be processed.  
+ 
+- if a `biblio_glutton_base` URL service is provided, biblio-glutton will be used to enrich the metadata of every harvested articles. biblio-glutton provides aggregated metadata that extends CrossRef records with PubMed information. 
+
+- if a DOI is not found by `biblio_glutton`, it is possible to call the CrossRef REST API as a fallback to retrieve the metadata. Thisis useful when the biblio-glutton service presents a gap in coverage for the recent DOI records. 
 
 ```json
 {
@@ -52,7 +64,11 @@ A configuration file must be completed, by default the file `config.json` will b
     "aws_access_key_id": "",
     "aws_secret_access_key": "",
     "bucket_name": "",
-    "batch_size": 100
+    "batch_size": 100,
+    "pmc_base": "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/",
+    "biblio_glutton_base": "", 
+    "crossref_base": "https://api.crossref.org",
+    "crossref_email": ""
 }
 ```
 
@@ -178,6 +194,10 @@ The UUID can then be used for accessing the resources for this entry, the prefix
 
 - PDF: `1b/a0/cc/e3/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2.pdf`
 
+- metadata in JSON: `1b/a0/cc/e3/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2.json`
+
+- possible JATS file (for harvested PMC full texts): `1b/a0/cc/e3/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2.nxml`
+
 - thumbnail small (150px width): `1b/a0/cc/e3/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2-thumb-small.png`
 
 - thumbnail medium (300px width): `1b/a0/cc/e3/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2-thumb-medium.png`
@@ -195,7 +215,6 @@ Recent update (end of October 2018) of imagemagick is breaking the normal conver
 ```
 <!-- <policy domain="coder" rights="none" pattern="PDF" /> -->
 ```
-
 
 ## License and contact
 
