@@ -644,8 +644,17 @@ class OAHarverster(object):
 
         elif self.swift is not None:
             # we should back-up existing map file on the SWIFT container
+            dump_file_name = os.path.basename(dump_file)
+            shutil.move(dump_file, dump_file+"new")
+            try:
+                path_for_old = os.path.join(self.config["data_path"], dump_file_name+".old")
+                self.swift.download_file(dump_file_name, path_for_old)
+                self.swift.upload_file_to_swift(path_for_old, None)
+            except:
+                logging.debug("no map file on SWIFT object storage")
+            shutil.move(dump_file+"new", dump_file)
 
-            # to SWIFT object storage
+            # new map file to SWIFT object storage
             try:
                 if os.path.isfile(dump_file):
                     self.swift.upload_file_to_swift(dump_file, None)
@@ -699,8 +708,15 @@ class OAHarverster(object):
         # re-init the environments
         self._init_lmdb()
 
-        # if used clean S3 or SWIFT object storage
-
+        # if used clean S3 
+        # TBD 
+        
+        # if used SWIFT object storage
+        if self.swift is not None:
+            try:
+                self.swift.remove_all_file()
+            except:
+                logging.error("Error resetting SWIFT object storage")
 
     def diagnostic(self):
         """
