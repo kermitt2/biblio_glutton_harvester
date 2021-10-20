@@ -17,5 +17,5 @@ my_config.*
 __pycache__
 OAHarvesterStreaming.py
 env/
-dump.json
-map.json
+dump.json*
+map.json*

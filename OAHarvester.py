@@ -632,9 +632,38 @@ class OAHarverster(object):
                 file_out.write("\n")
 
         # copy/upload mapping dump file
+        if self.s3 is not None:
+            # we should back-up existing map file on S3
 
+            # upload to S3 
+            try:
+                if os.path.isfile(dump_file):
+                    self.s3.upload_file_to_s3(dump_file, None, storage_class='ONEZONE_IA')
+            except:
+                logging.error("Error writing on S3 bucket")
 
+        elif self.swift is not None:
+            # we should back-up existing map file on the SWIFT container
 
+            # to SWIFT object storage
+            try:
+                if os.path.isfile(dump_file):
+                    self.swift.upload_file_to_swift(dump_file, None)
+            except:
+                logging.error("Error writing on SWIFT object storage")
+
+        # always save under local storage indicated by data_path in the config json, and backup the previous one
+        try:
+            # rename existing one as .old
+            dump_file_name = os.path.basename(dump_file)
+            if os.path.isfile(os.path.join(self.config["data_path"], dump_file_name)):
+                shutil.move(os.path.join(self.config["data_path"], dump_file_name), os.path.join(self.config["data_path"], dump_file_name+".old"))
+
+            if os.path.isfile(dump_file):
+                shutil.copyfile(dump_file, os.path.join(self.config["data_path"], dump_file_name))
+
+        except IOError:
+            logging.exception("invalid path")
 
     def reset(self):
         """
