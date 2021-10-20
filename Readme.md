@@ -1,18 +1,18 @@
 # Open Access PDF harvester
 
-Python utility for harvesting efficiently a large Open Access collection of PDF: 
+Python utility for harvesting efficiently a large Open Access collection of scholar PDF: 
 
-* Downloaded PDF can be stored either on an Amazon S3 bucket, on a SWIFT object storage (OpenStack) or on a local storage, with UUID renaming/mapping. 
+* The downloaded PDF can be stored either on an Amazon S3 bucket, on a SWIFT object storage (OpenStack) or on a local storage, with UUID renaming/mapping. 
 
 * Downloads and storage uploads over HTTP(S) are multi-threaded for best robustness and efficiency. 
 
-* Download supports redirections, https protocol and uses rotating request headers. 
+* The download supports redirections, https protocol, wait/retries and uses rotating request headers. 
 
 * The harvesting process can be interrupted and resumed.
 
 * The tool is fault tolerant, it will keep track of the failed resource access with corresponding errors and makes possible subsequent retry on this subset. 
 
-* Optionally, aggregated metadata from biblio-glutton for an article are accessed and stored with the other resources. 
+* Optionally, aggregated metadata from biblio-glutton for an article are accessed and stored together with the full text resources. 
 
 * As a bonus, image thumbnails of the front page of the PDF are created and stored with the PDF.
 
@@ -22,7 +22,11 @@ The utility can be used in particular to harvest the **Unpaywall** dataset (PDF)
 
 ## Requirements
 
-The utility requires Python 3.6 or more. It is developed for a deployment on a POSIX/Linux server (it uses `imagemagick` as external process to generate thumbnails and `wget`). An S3 account and bucket or SWIFT object storage must have been created for non-local storage of the data collection. 
+The utility requires Python 3.6 or more. It is developed for a deployment on a POSIX/Linux server (it uses `imagemagick` as external process to generate thumbnails and `wget`). An S3 account and bucket or SWIFT object storage must have been created for cloud storage of the data collection. 
+
+The utility will use some local storage dedicated to the embedded databases keeping track of the advancement of the harvesting, metadata and temporary downloaded resources. Consider a few GB of free space for a large scale harvesting of TB of PDF. 
+
+Storage: as a rule of thumb, consider bewteen 1 and 1.5 TB for storage 1 million scholar PDF.
 
 ## Install
 
@@ -48,15 +52,15 @@ For generating thumbnails corresponding to the harvested PDF, ImageMagick must b
 
 ## Configuration
 
-A configuration file must be completed, by default the file `config.json` will be used, but it is also possible to use it as a template and specifies a particular configuration file when using the tool. 
+A configuration file must be completed, by default the file `config.json` will be used, but it is also possible to use it as a template and specifies a particular configuration file when using the tool (via the `--config` parameter). 
 
-- In the configuration file, the information related to the S3 bucket to be used for uploading the resources must be filed, otherwise the resources will be stored locally in the indicated `data_path`. 
+- `data_path` is the path where temporary files, metadata and local DB are stored to manage the harvesting. If no cloud storage configuration is indicated, it is also where the harvested resources will be stored.  
 
 - `batch_size` gives the number of PDF that is considered for parallel process at the same time, the process will move to a new batch only when all the PDF of the previous batch will be processed.  
  
-- if a `biblio_glutton_base` URL service is provided, biblio-glutton will be used to enrich the metadata of every harvested articles. biblio-glutton provides aggregated metadata that extends CrossRef records with PubMed information. 
+- if a `biblio_glutton_base` URL service is provided, biblio-glutton will be used to enrich the metadata of every harvested articles. biblio-glutton provides aggregated metadata that extends CrossRef records with PubMed information and strong identifiers. 
 
-- if a DOI is not found by `biblio_glutton`, it is possible to call the CrossRef REST API as a fallback to retrieve the metadata. This is useful when the biblio-glutton service presents a gap in coverage for the recent DOI records. 
+- if a DOI is not found by `biblio_glutton`, it is possible to call the CrossRef REST API as a fallback to retrieve the publisher metadata. This is useful when the biblio-glutton service presents a gap in coverage for recent DOI records. 
 
 ```json
 {
@@ -85,6 +89,7 @@ Configuration for a S3 storage uses the following parameters:
     "region": ""
 }
 ```
+
 If you are not using a S3 storage, remove these keys or leave these values empty.
 
 The configuration for a SWIFT object storage uses the following parameters:
@@ -116,7 +121,7 @@ If you are not using a SWIFT storage, remove these keys or leave these above val
 }
 ```
 
-Note: for harvesting PMC files, although the ftp server is used, downloads tend to fail as the parallel requests increase. It might be useful to lower the default, and to launch `reprocess` for completing the harvesting. For the unpaywall dataset, we have good results with high `batch_size` (like 200), probably because the distribution of the URL implies that requests are never concentrated on one server. 
+Note: for harvesting PMC files, although the ftp server is used, the downloads tend to fail as the parallel requests increase. It might be useful to lower the default, and to launch `reprocess` for completing the harvesting. For the unpaywall dataset, we have good results with high `batch_size` (like 200), probably because the distribution of the URL implies that requests are never concentrated on one OA server. 
 
 Also note that: 
 
@@ -149,7 +154,7 @@ optional arguments:
 
 ```
 
-The Unpaywall dataset is available from Impactstory. 
+The [Unpaywall database snapshot](https://unpaywall.org) is available from [OurResearch](http://ourresearch.org/). 
 
 `PMC_FILE_LIST` can currently be accessed as follow:
 - all OA files: ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_file_list.txt
@@ -202,17 +207,17 @@ For harvesting only a predifined random number of entries and not the whole sets
 This command will harvest 2000 PDF randomly distributed in the complete PMC set. For the Unpaywall set, as around 20% of the entries only have an Open Access PDF, you will need to multiply by 5 the sample number, e.g. if you wish 2000 PDF, indicate `--sample 10000`. 
 
 
-### Dump for identifier mapping
+### Map for identifier mapping
 
-A mapping with UUID and the main identifiers of the entries can be dumped in JSONL (default file name is `map.jsonl`) with the following command:
+A mapping with the UUID and the main identifiers of the entries can be dumped in JSONL (default file name is `map.jsonl`) with the following command:
 
 ```bash
 > python3 OAHarvester.py --dump output.jsonl
 ```
 
-This dump is necessary for further usage and for accessing resources associated to an entry (listing million files directly with AWS S3 is by far too slow, we thus need a local index and a DB).
+By default, this map is always generated at the completion of an harvesting or re-harvesting. This mapping is necessary for further usage and for accessing resources associated to an entry (listing million files directly with AWS S3 is by far too slow, we thus need a local index/catalog).
 
-In the JSONL dump, each entry is present in the dump with its UUID given by the attribute `id`, its main identifiers (`doi`, `pmid`, `pmcid`, `pii`, `istextId`) and the list of available harvested resources.
+In the JSONL dump, each entry is present with its UUID given by the attribute `id`, its main identifiers (`doi`, `pmid`, `pmcid`, `pii`, `istextId`) and the list of available harvested resources.
 
 ```json
 { 
@@ -234,11 +239,11 @@ The UUID can then be used for accessing the resources for this entry, the prefix
 
 - thumbnail large (500px width): `1b/a0/cc/e3/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2-thumb-large.png`
 
-Depending on the config, the resources can be accessed either locally under `data_path` or on AWS S3 following the URL prefix: `https://bucket_name.s3.amazonaws.com/`, for instance `https://bucket_name.s3.amazonaws.com/1b/a0/cc/e3/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2.pdf` - if you have set the appropriate access rights. The same applies to SWIFT object storage based on the container name indicated in the config file. 
+Depending on the config, the resources can be accessed either locally under `data_path` or on AWS S3 following the URL prefix: `https://bucket_name.s3.amazonaws.com/`, for instance `https://bucket_name.s3.amazonaws.com/1b/a0/cc/e3/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2.pdf` - if you have set the appropriate access rights. The same applies to a SWIFT object storage based on the container name indicated in the config file. 
 
 ## Troubleshooting with imagemagick
 
-Relatively recent update (end of October 2018) of imagemagick is breaking the normal conversion usage. Basically the converter does not convert by default for security reason related to server usage. For non-server mode as involved in our module, it is not a problem to allow PDF conversion. For this, simply edit the file 
+A relatively recent update (end of October 2018) of imagemagick is breaking the normal conversion usage. Basically the converter does not convert by default for security reason related to server usage. For non-server mode as involved in our module, it is not a problem to allow PDF conversion. For this, simply edit the file 
 ` /etc/ImageMagick-6/policy.xml` and put into comment the following line: 
 
 ```
