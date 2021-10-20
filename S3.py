@@ -22,7 +22,7 @@ class S3(object):
 
     def upload_file_to_s3(self, file_path, dest_path=None, storage_class='STANDARD_IA'):
         """
-        Upload given file to s3 using a managed uploader, which will split up large
+        Upload the given file to s3 using a managed uploader, which will split up large
         files automatically and upload parts in parallel.
         By default, files are stored with the class standard infrequent access. 
         Possible storage classes are: STANDARD, STANDARD_IA, REDUCED_REDUNDANCY or ONEZONE_IA
@@ -67,7 +67,7 @@ class S3(object):
             print('Cannot download file', file_path)
             return
 
-    def get_s3_results(self, dir_name):
+    def get_s3_list(self, dir_name):
         """
         Return all contents of a given dir in s3.
         Goes through the pagination to obtain all file names.

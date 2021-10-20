@@ -12,7 +12,10 @@ target
 *.zip
 *.tar.gz
 data/
-my_config.json
+!data/.gitkeep
+my_config.*
 __pycache__
 OAHarvesterStreaming.py
 env/
+dump.json
+map.json

@@ -1,5 +1,3 @@
-import boto3
-import botocore
 import sys
 import os
 import shutil
@@ -13,20 +11,31 @@ import uuid
 import subprocess
 import argparse
 import time
-import S3
 from concurrent.futures import ThreadPoolExecutor
-import subprocess
 import tarfile
 from random import randint, choices
 from tqdm import tqdm
+
+# logging
 import logging
 import logging.handlers
 
-map_size = 100 * 1024 * 1024 * 1024 
+# support for S3
+import S3
+
+# support for SWIFT object storage
+import swift
+
+# init LMDB
+map_size = 200 * 1024 * 1024 * 1024 
 logging.basicConfig(filename='harvester.log', filemode='w', level=logging.DEBUG)
 
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+biblio_glutton_url = None
+crossref_base = None
+crossref_email = None
 
 '''
 Harvester for PDF available in open access. a LMDB index is used to keep track of the harvesting process and
@@ -40,8 +49,8 @@ only when the first is entirely processed. The harvesting process is not CPU bou
 '''
 class OAHarverster(object):
 
-    def __init__(self, config_path='./config.json', thumbnail=False, sample=None):
-        self.config = None
+    def __init__(self, config, thumbnail=False, sample=None):
+        self.config = config
         
         # standard lmdb environment for storing biblio entries by uuid
         self.env = None
@@ -51,8 +60,6 @@ class OAHarverster(object):
 
         # lmdb environment for keeping track of failures
         self.env_fail = None
-
-        self._load_config(config_path)
         
         # boolean indicating if we want to generate thumbnails of front page of PDF 
         self.thumbnail = thumbnail
@@ -65,12 +72,9 @@ class OAHarverster(object):
         if "bucket_name" in self.config and len(self.config["bucket_name"].strip()) > 0:
             self.s3 = S3.S3(self.config)
 
-    def _load_config(self, path='./config.json'):
-        """
-        Load the json configuration 
-        """
-        config_json = open(path).read()
-        self.config = json.loads(config_json)
+        self.swift = None
+        if "swift" in self.config and len(self.config["swift"])>0 and "swift_container" in self.config and len(self.config["swift_container"])>0:
+            self.swift = swift.Swift(self.config)
 
     def _init_lmdb(self):
         # create the data path if it does not exist 
@@ -134,8 +138,6 @@ class OAHarverster(object):
                 position += 1
                 continue
 
-            #if n >= 100:
-            #    break
             if i == batch_size_pdf:
                 self.processBatch(urls, filenames, entries)
                 # reinit
@@ -154,6 +156,11 @@ class OAHarverster(object):
                 position += 1
                 continue
 
+            if not 'best_oa_location' in entry and 'oa_locations' in entry and len(entry['oa_locations'])>0:
+                # this is a fallback in case we don't have the `best_oa_location` part (it should not happen
+                # with a normal Unpaywall dump)
+                entry['best_oa_location'] = entry['oa_locations'][0]
+
             if 'best_oa_location' in entry:
                 if entry['best_oa_location'] is not None:
                     if 'url_for_pdf' in entry['best_oa_location']:
@@ -167,6 +174,8 @@ class OAHarverster(object):
                             entries.append(entry)
                             filenames.append(os.path.join(self.config["data_path"], entry['id']+".pdf"))
                             i += 1
+                    if "is_best" in entry['best_oa_location']:
+                        del entry['best_oa_location']['is_best']
             position += 1
             
         gz.close()
@@ -227,8 +236,7 @@ class OAHarverster(object):
                 if position == 0:
                     position += 1
                     continue
-                #if n >= 100:
-                #    break
+
                 if i == batch_size_pdf:
                     self.processBatch(urls, filenames, entries)#, txn, txn_doi, txn_fail)
                     # reinit
@@ -278,7 +286,7 @@ class OAHarverster(object):
             
         # we need to process the latest incomplete batch (if not empty)
         if len(urls) >0:
-            self.processBatch(urls, filenames, entries)#, txn, txn_doi, txn_fail)
+            self.processBatch(urls, filenames, entries)
             n += len(urls)
 
         print("total entries:", n)
@@ -300,11 +308,13 @@ class OAHarverster(object):
             if os.path.isfile(local_filename): 
                 if _is_valid_file(local_filename, "pdf"):
                     valid_file = True
+                    local_entry["valid_fulltext_pdf"] = True
             
             local_filename = os.path.join(self.config["data_path"], local_entry['id']+".nxml")
             if os.path.isfile(local_filename): 
                 if _is_valid_file(local_filename, "xml"):
                     valid_file = True
+                    local_entry["valid_fulltext_xml"] = True
 
             if (result[0] is None or result[0] == "0" or result[0] == "success") and valid_file:
                 #update DB
@@ -352,7 +362,21 @@ class OAHarverster(object):
         entries = []
         for result in results: 
             local_entry = result[1]
-            if result[0] is None or result[0] == "0":
+
+            valid_file = False
+            local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
+            if os.path.isfile(local_filename): 
+                if _is_valid_file(local_filename, "pdf"):
+                    valid_file = True
+                    local_entry["valid_fulltext_pdf"] = True
+            
+            local_filename = os.path.join(self.config["data_path"], local_entry['id']+".nxml")
+            if os.path.isfile(local_filename): 
+                if _is_valid_file(local_filename, "xml"):
+                    valid_file = True
+                    local_entry["valid_fulltext_xml"] = True
+
+            if (result[0] is None or result[0] == "0" or result[0] == "success") and valid_file:
                 entries.append(local_entry)
                 # remove the entry in fail, as it is now sucessful
                 with self.env_fail.begin(write=True) as txn_fail2:
@@ -374,7 +398,6 @@ class OAHarverster(object):
         with ThreadPoolExecutor(max_workers=12) as executor:
             results = executor.map(self.manageFiles, entries, timeout=30)
 
-
     def getUUIDByIdentifier(self, identifier):
         txn = self.env_doi.begin()
         return txn.get(identifier.encode(encoding='UTF-8'))
@@ -386,15 +409,6 @@ class OAHarverster(object):
         # for metadata
         local_filename_json = os.path.join(self.config["data_path"], local_entry['id']+".json")
 
-        # optional biblio-glutton look-up
-        glutton_record = self.biblio_glutton_lookup(doi=local_entry['doi'],
-                                                    pmcid=local_entry['pmicd'],
-                                                    pmid=local_entry['pmid'],
-                                                    istex_id=None,
-                                                    istex_ark=None)
-        if glutton_record != None:
-            local_entry["glutton"] = glutton_record
-
         # generate thumbnails
         if self.thumbnail:
             try:
@@ -403,30 +417,64 @@ class OAHarverster(object):
                 logging.exception("error with thumbnail generation: " + local_entry['id'])
         
         dest_path = os.path.join(generateStoragePath(local_entry['id']), local_entry['id'])
+
         thumb_file_small = local_filename.replace('.pdf', '-thumb-small.png')
         thumb_file_medium = local_filename.replace('.pdf', '-thumb-medium.png')
         thumb_file_large = local_filename.replace('.pdf', '-thumb-large.png')
+
+        if os.path.isfile(thumb_file_small):
+            local_entry["valid_thumbnails"] = True
+
+        # write metadata file
+        with open(local_filename_json, 'w') as outfile:
+            json.dump(local_entry, outfile)
 
         if self.s3 is not None:
             # upload to S3 
             # upload is already in parallel for individual file (with parts)
             # so we don't further upload in parallel at the level of the files
-            if os.path.isfile(local_filename):
-                self.s3.upload_file_to_s3(local_filename, dest_path, storage_class='ONEZONE_IA')
-            if os.path.isfile(local_filename_nxml):
-                self.s3.upload_file_to_s3(local_filename_nxml, dest_path, storage_class='ONEZONE_IA')
-            if os.path.isfile(local_filename_json):
-                self.s3.upload_file_to_s3(local_filename_json, dest_path, storage_class='ONEZONE_IA')
+            try:
+                if os.path.isfile(local_filename):
+                    self.s3.upload_file_to_s3(local_filename, dest_path, storage_class='ONEZONE_IA')
+                if os.path.isfile(local_filename_nxml):
+                    self.s3.upload_file_to_s3(local_filename_nxml, dest_path, storage_class='ONEZONE_IA')
+                if os.path.isfile(local_filename_json):
+                    self.s3.upload_file_to_s3(local_filename_json, dest_path, storage_class='ONEZONE_IA')
 
-            if (self.thumbnail):
-                if os.path.isfile(thumb_file_small):
-                    self.s3.upload_file_to_s3(thumb_file_small, dest_path, storage_class='ONEZONE_IA')
+                if (self.thumbnail):
+                    if os.path.isfile(thumb_file_small):
+                        self.s3.upload_file_to_s3(thumb_file_small, dest_path, storage_class='ONEZONE_IA')
 
-                if os.path.isfile(thumb_file_medium): 
-                    self.s3.upload_file_to_s3(thumb_file_medium, dest_path, storage_class='ONEZONE_IA')
-                
-                if os.path.isfile(thumb_file_large): 
-                    self.s3.upload_file_to_s3(thumb_file_large, dest_path, storage_class='ONEZONE_IA')
+                    if os.path.isfile(thumb_file_medium): 
+                        self.s3.upload_file_to_s3(thumb_file_medium, dest_path, storage_class='ONEZONE_IA')
+                    
+                    if os.path.isfile(thumb_file_large): 
+                        self.s3.upload_file_to_s3(thumb_file_large, dest_path, storage_class='ONEZONE_IA')
+            except:
+                logging.error("Error writing on S3 bucket")
+
+        elif self.swift is not None:
+            # to SWIFT object storage
+            try:
+                if os.path.isfile(local_filename):
+                    self.swift.upload_file_to_swift(local_filename, dest_path)
+                if os.path.isfile(local_filename_nxml):
+                    self.swift.upload_file_to_swift(local_filename_nxml, dest_path)
+                if os.path.isfile(local_filename_json):
+                    self.swift.upload_file_to_swift(local_filename_json, dest_path)
+
+                if (self.thumbnail):
+                    if os.path.isfile(thumb_file_small):
+                        self.swift.upload_file_to_swift(thumb_file_small, dest_path)
+
+                    if os.path.isfile(thumb_file_medium): 
+                        self.swift.upload_file_to_swift(thumb_file_medium, dest_path)
+
+                    if os.path.isfile(thumb_file_large): 
+                        self.swift.upload_file_to_swift(thumb_file_large, dest_path)
+            except:
+                logging.error("Error writing on SWIFT object storage")
+
         else:
             # save under local storate indicated by data_path in the config json
             try:
@@ -461,6 +509,12 @@ class OAHarverster(object):
                 os.remove(local_filename_nxml)
             if os.path.isfile(local_filename_json):
                 os.remove(local_filename_json)
+
+            # possible tar.gz remaining from PMC resources
+            local_filename_tar = os.path.join(self.config["data_path"], local_entry['id']+".tar.gz")
+            if os.path.isfile(local_filename_tar): 
+                os.remove(local_filename_tar)
+
             if (self.thumbnail):
                 if os.path.isfile(thumb_file_small): 
                     os.remove(thumb_file_small)
@@ -546,8 +600,41 @@ class OAHarverster(object):
                     continue
                 local_entry = _deserialize_pickle(txn.get(key))
                 local_entry["id"] = key.decode(encoding='UTF-8');
-                file_out.write(json.dumps(local_entry))
+
+                map_entry = {}
+                map_entry["id"] = local_entry["id"]
+                if "doi" in local_entry:
+                    map_entry["doi"] = local_entry["doi"]
+                if "pmid" in local_entry:
+                    map_entry["pmid"] = local_entry["pmid"]
+                if "pmcid" in local_entry:
+                    map_entry["pmcid"] = local_entry["pmcid"]
+                if "istexId" in local_entry:
+                    map_entry["istexId"] = local_entry["istexId"]
+                if "ark" in local_entry:
+                    map_entry["ark"] = local_entry["ark"]
+                if "pii" in local_entry:
+                    map_entry["pii"] = local_entry["pii"]
+
+                resources = [ "json" ]
+
+                if "valid_fulltext_pdf" in local_entry and local_entry["valid_fulltext_pdf"]:
+                    resources.append("pdf")
+                if "valid_fulltext_xml" in local_entry and local_entry["valid_fulltext_xml"]:
+                    resources.append("xml")
+
+                if  "valid_thumbnails" in local_entry and local_entry["valid_thumbnails"]:  
+                    resources.append("thumbnails")
+
+                map_entry["resources"] = resources
+
+                file_out.write(json.dumps(map_entry))
                 file_out.write("\n")
+
+        # copy/upload mapping dump file
+
+
+
 
     def reset(self):
         """
@@ -572,7 +659,7 @@ class OAHarverster(object):
         for f in os.listdir(self.config["data_path"]):
             if f.endswith(".pdf") or f.endswith(".png") or f.endswith(".nxml") or f.endswith(".tar.gz") or f.endswith(".xml"):
                 os.remove(os.path.join(self.config["data_path"], f))
-            # clean any existing data files, except 
+            # clean any existing data files  
             path = os.path.join(self.config["data_path"], f)
             if os.path.isdir(path):
                 try:
@@ -582,6 +669,9 @@ class OAHarverster(object):
 
         # re-init the environments
         self._init_lmdb()
+
+        # if used clean S3 or SWIFT object storage
+
 
     def diagnostic(self):
         """
@@ -593,58 +683,59 @@ class OAHarverster(object):
         nb_total = txn.stat()['entries']
         print("number of failed entries with OA link:", nb_fails, "out of", nb_total, "entries")
 
-    def biblio_glutton_lookup(self, doi=None, pmcid=None, pmid=None, istex_id=None, istex_ark=None):
-        """
-        Lookup on biblio_glutton with the provided strong identifiers, return the full agregated biblio_glutton record.
-        This allows to optionally enrich downloaded article with Glutton's aggregated metadata. 
-        """
-        if not "biblio_glutton_base" in self.config or len(self.config["biblio_glutton_base"]) == 0:
-            return None
+def _biblio_glutton_lookup(biblio_glutton_url, doi=None, pmcid=None, pmid=None, istex_id=None, istex_ark=None, crossref_base= None, crossref_email=None):
+    """
+    Lookup on biblio_glutton with the provided strong identifiers, return the full agregated biblio_glutton record.
+    This allows to optionally enrich downloaded article with Glutton's aggregated metadata. 
+    """
+    if biblio_glutton_url == None:
+        return None
 
-        biblio_glutton_url = _biblio_glutton_url(self.config["biblio_glutton_base"], None)
-        success = False
-        jsonResult = None
+    success = False
+    jsonResult = None
 
-        if doi is not None and len(doi)>0:
-            response = requests.get(biblio_glutton_url, params={'doi': doi}, verify=False, timeout=5)
-            success = (response.status_code == 200)
-            if success:
-                jsonResult = response.json()
+    if doi is not None and len(doi)>0:
+        response = requests.get(biblio_glutton_url, params={'doi': doi}, verify=False, timeout=5)
+        success = (response.status_code == 200)
+        if success:
+            jsonResult = response.json()
 
-        if not success and pmid is not None and len(pmid)>0:
-            response = requests.get(biblio_glutton_url + "pmid=" + pmid, verify=False, timeout=5)
-            success = (response.status_code == 200)
-            if success:
-                jsonResult = response.json()     
+    if not success and pmid is not None and len(pmid)>0:
+        response = requests.get(biblio_glutton_url + "pmid=" + pmid, verify=False, timeout=5)
+        success = (response.status_code == 200)
+        if success:
+            jsonResult = response.json()     
 
-        if not success and pmcid is not None and len(pmcid)>0:
-            response = requests.get(biblio_glutton_url + "pmc=" + pmcid, verify=False, timeout=5)  
-            success = (response.status_code == 200)
-            if success:
-                jsonResult = response.json()
+    if not success and pmcid is not None and len(pmcid)>0:
+        response = requests.get(biblio_glutton_url + "pmc=" + pmcid, verify=False, timeout=5)  
+        success = (response.status_code == 200)
+        if success:
+            jsonResult = response.json()
 
-        if not success and istex_id is not None and len(istex_id)>0:
-            response = requests.get(biblio_glutton_url + "istexid=" + istex_id, verify=False, timeout=5)
-            success = (response.status_code == 200)
-            if success:
-                jsonResult = response.json()
-        
-        if not success and doi is not None and len(doi)>0:
-            # let's call crossref as fallback for possible X-months gap in biblio-glutton
-            # https://api.crossref.org/works/10.1037/0003-066X.59.1.29
-            user_agent = {'User-agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:81.0) Gecko/20100101 Firefox/81.0 (mailto:' 
-                + self.config['crossref_email'] + ')'} 
-            response = requests.get(self.config['crossref_base']+"/works/"+doi, headers=user_agent, verify=False, timeout=5)
-            if response.status_code == 200:
-                jsonResult = response.json()['message']
-                # filter out references and re-set doi, in case there are obtained via crossref
-                if "reference" in jsonResult:
-                    del jsonResult["reference"]
-            else:
-                success = False
-                jsonResult = None
-        
-        return jsonResult
+    if not success and istex_id is not None and len(istex_id)>0:
+        response = requests.get(biblio_glutton_url + "istexid=" + istex_id, verify=False, timeout=5)
+        success = (response.status_code == 200)
+        if success:
+            jsonResult = response.json()
+    
+    if not success and doi is not None and len(doi)>0 and crossref_base != None:
+        # let's call crossref as fallback for possible X-months gap in biblio-glutton
+        # https://api.crossref.org/works/10.1037/0003-066X.59.1.29
+        if crossref_email != None:
+            user_agent = {'User-agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:81.0) Gecko/20100101 Firefox/81.0 (mailto:'+crossref_email + ')'}
+        else:
+            user_agent = {'User-agent': _get_random_user_agent()}
+        response = requests.get(crossref_base+"/works/"+doi, headers=user_agent, verify=False, timeout=5)
+        if response.status_code == 200:
+            jsonResult = response.json()['message']
+            # filter out references and re-set doi, in case there are obtained via crossref
+            if "reference" in jsonResult:
+                del jsonResult["reference"]
+        else:
+            success = False
+            jsonResult = None
+    
+    return jsonResult
 
 def _get_random_user_agent():
     '''
@@ -658,7 +749,7 @@ def _get_random_user_agent():
     weights = [0.2, 0.3, 0.5]
     user_agent = choices(user_agents, weights=weights, k=1)
 
-    return user_agent
+    return user_agent[0]
 
 def _serialize_pickle(a):
     return pickle.dumps(a)
@@ -666,7 +757,39 @@ def _serialize_pickle(a):
 def _deserialize_pickle(serialized):
     return pickle.loads(serialized)
 
-def _download(url, filename, entry):
+def _download(url, filename, local_entry):
+    # optional biblio-glutton look-up
+    global biblio_glutton_url
+    global crossref_base
+    global crossref_email
+
+    if biblio_glutton_url != None:
+        local_doi = None
+        if "doi" in local_entry:
+            local_doi = local_entry['doi']
+        local_pmcid = None
+        if "pmicd" in local_entry:
+            local_pmcid = local_entry['pmicd']
+        local_pmid = None
+        if "pmid" in local_entry:
+            local_pmid = local_entry['pmid']
+        glutton_record = _biblio_glutton_lookup(biblio_glutton_url,
+                                                doi=local_doi,
+                                                pmcid=local_pmcid,
+                                                pmid=local_pmid,
+                                                crossref_base= crossref_base, 
+                                                crossref_email=crossref_email)
+        if glutton_record != None:
+            local_entry["glutton"] = glutton_record
+            if not "doi" in local_entry and "doi" in glutton_record:
+                local_entry["doi"] = glutton_record["doi"]
+            if not "pmid" in local_entry and "pmid" in glutton_record:
+                local_entry["pmid"] = glutton_record["pmid"]
+            if not "pmcid" in local_entry and "pmcid" in glutton_record:
+                local_entry["pmcid"] = glutton_record["pmcid"]    
+            if not "istexId" in local_entry and "istexId" in glutton_record:
+                local_entry["istexId"] = glutton_record["istexId"]    
+
     result = _download_requests(url, filename)
     if result != "success":
         result = _download_wget(url, filename)
@@ -674,7 +797,7 @@ def _download(url, filename, entry):
     if os.path.isfile(filename) and filename.endswith(".tar.gz"):
         _manage_pmc_archives(filename)
 
-    return result, entry
+    return result, local_entry
 
 def _download_wget(url, filename):
     """ 
@@ -688,11 +811,12 @@ def _download_wget(url, filename):
     # This is the most robust and reliable way to download files I found with Python... to rely on system wget :)
     #cmd = "wget -c --quiet" + " -O " + filename + ' --connect-timeout=10 --waitretry=10 ' + \
     cmd = "wget -c --quiet" + " -O " + filename + ' --timeout=15 --waitretry=0 --tries=5 --retry-connrefused ' + \
-        '--header="User-Agent: ' + _get_random_user_agent()+ '" ' + \
+        '--header="User-Agent: "' + _get_random_user_agent()+ '" ' + \
         '--header="Accept: application/pdf, text/html;q=0.9,*/*;q=0.8" --header="Accept-Encoding: gzip, deflate" ' + \
         '--no-check-certificate ' + \
-        #'--compression=auto ' + \
         '"' + url + '"'
+    #'--compression=auto ' + \
+
     try:
         result = subprocess.check_call(cmd, shell=True)
         
@@ -730,7 +854,7 @@ def _download_requests(url, filename):
     """ 
     Download with Python requests which handle well compression, but not very robust and bad parallelization
     """
-    HEADERS = {"""User-Agent""": """Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:81.0) Gecko/20100101 Firefox/81.0"""}
+    HEADERS = {"""User-Agent""": _get_random_user_agent()}
     result = "fail" 
     try:
         file_data = requests.get(url, allow_redirects=True, headers=HEADERS, verify=False, timeout=30)
@@ -898,6 +1022,13 @@ def generateStoragePath(identifier):
     '''
     return os.path.join(identifier[:2], identifier[2:4], identifier[4:6], identifier[6:8])
 
+def _load_config(path='./config.json'):
+    """
+    Load the json configuration 
+    """
+    config_json = open(path).read()
+    return json.loads(config_json)
+
 def test():
     harvester = OAHarverster()
 
@@ -906,9 +1037,9 @@ if __name__ == "__main__":
     parser.add_argument("--unpaywall", default=None, help="path to the Unpaywall dataset (gzipped)") 
     parser.add_argument("--pmc", default=None, help="path to the pmc file list, as available on NIH's site") 
     parser.add_argument("--config", default="./config.json", help="path to the config file, default is ./config.json") 
-    parser.add_argument("--dump", default="dump.json", help="write all JSON entries having a sucessful OA link with their UUID") 
+    parser.add_argument("--dump", default="map.jsonl", help="write a map with UUID, article main identifiers and available harvested resources") 
     parser.add_argument("--reprocess", action="store_true", help="reprocessed failed entries with OA link") 
-    parser.add_argument("--reset", action="store_true", help="ignore previous processing states, and re-init the harvesting process from the beginning") 
+    parser.add_argument("--reset", action="store_true", help="ignore previous processing states, clear the existing storage and re-init the harvesting process from the beginning") 
     parser.add_argument("--thumbnail", action="store_true", help="generate thumbnail files for the front page of the PDF") 
     parser.add_argument("--sample", type=int, default=None, help="Harvest only a random sample of indicated size")
 
@@ -923,7 +1054,17 @@ if __name__ == "__main__":
     thumbnail = args.thumbnail
     sample = args.sample
 
-    harvester = OAHarverster(config_path=config_path, thumbnail=thumbnail, sample=sample)
+    config = _load_config(config_path)
+
+    # some global variables
+    if "biblio_glutton_base" in config and len(config["biblio_glutton_base"].strip())>0:
+        biblio_glutton_url = _biblio_glutton_url(config["biblio_glutton_base"], None)
+    if "crossref_base" in config and len(config["crossref_base"].strip())>0:
+        crossref_base = config["crossref_base"]
+    if "crossref_email" in config and len(config["crossref_email"].strip())>0:
+        crossref_email = config["crossref_email"]
+
+    harvester = OAHarverster(config=config, thumbnail=thumbnail, sample=sample)
 
     if reset:
         harvester.reset()

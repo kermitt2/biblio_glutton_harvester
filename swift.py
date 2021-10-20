@@ -16,18 +16,17 @@ class Swift(object):
 
         options = self._init_swift_options()
         options['object_uu_threads'] = 20
-        #print(options)
         self.swift = SwiftService(options=options)
         container_names = []
-
         try:
             list_account_part = self.swift.list()
             for page in list_account_part:
-                print(page)
                 if page["success"]:
                     for item in page["listing"]:
                         i_name = item["name"]
                         container_names.append(i_name)
+                        if i_name == self.config["swift_container"]:
+                            print(item)
                 else:
                     logging.error("error listing SWIFT object storage containers")
 
@@ -64,21 +63,14 @@ class Swift(object):
             
         obj = SwiftUploadObject(file_path, object_name=object_name)
         objs.append(obj)
-
-        # in the documentation they call that "dir marker", which seems to be loading an empty directory path object
-        # very likely useless for us
-        #obj = SwiftUploadObject(None, object_name=dest_path, options={'dir_marker': True})
-        #objs.append(obj)
-
         try:
-            result = swift.upload(self.config["swift_container"], objs)
-            if not r['success']:
-                error = r['error']
-                if r['action'] == "upload_object":
-                    logging.error("Failed to upload object %s to container %s: %s" % (container, r['object'], error))
-                else:
-                    logging.error("%s" % error)
-
+            for result in self.swift.upload(self.config["swift_container"], objs):
+                if not result['success']:
+                    error = result['error']
+                    if result['action'] == "upload_object":
+                        logging.error("Failed to upload object %s to container %s: %s" % (self.config["swift_container"], result['object'], error))
+                    else:
+                        logging.error("%s" % error)
         except SwiftError:
             logging.exception("error uploading file to SWIFT container")
 
