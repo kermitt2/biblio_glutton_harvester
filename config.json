@@ -1,9 +1,14 @@
 {
     "data_path": "./data",
+    "batch_size": 100,
+    "pmc_base": "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/",
+    "biblio_glutton_base": "", 
+    "crossref_base": "https://api.crossref.org",
+    "crossref_email": "",
     "aws_access_key_id": "",
     "aws_secret_access_key": "",
     "bucket_name": "",
     "region": "",
-    "batch_size": 100,
-    "pmc_base": "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/"
+    "swift": {},
+    "swift_container": ""
 }
