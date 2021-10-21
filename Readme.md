@@ -56,6 +56,8 @@ A configuration file must be completed, by default the file `config.json` will b
 
 - `data_path` is the path where temporary files, metadata and local DB are stored to manage the harvesting. If no cloud storage configuration is indicated, it is also where the harvested resources will be stored.  
 
+- `compression` indicates if the resource files need to be compressed with `gzip` or not. Default is true, which means that all the harvested files will have an additional extension `.gz`. 
+
 - `batch_size` gives the number of PDF that is considered for parallel process at the same time, the process will move to a new batch only when all the PDF of the previous batch will be processed.  
  
 - if a `biblio_glutton_base` URL service is provided, biblio-glutton will be used to enrich the metadata of every harvested articles. biblio-glutton provides aggregated metadata that extends CrossRef records with PubMed information and strong identifiers. 
@@ -65,6 +67,7 @@ A configuration file must be completed, by default the file `config.json` will b
 ```json
 {
     "data_path": "./data",
+    "compression": true,
     "batch_size": 100,
     "pmc_base": "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/",
     "biblio_glutton_base": "", 
