@@ -22,7 +22,7 @@ The utility can be used in particular to harvest the **Unpaywall** dataset (PDF)
 
 ## Requirements
 
-The utility requires Python 3.6 or more. It is developed for a deployment on a POSIX/Linux server (it uses `imagemagick` as external process to generate thumbnails and `wget`). An S3 account and a dedicated S3 bucket or a SWIFT object storage and a dedicated SWIFT container must have been created for the cloud storage of the data collection. 
+The utility requires Python 3.6 or more. It is developed for a deployment on a POSIX/Linux server (it uses `imagemagick` to generate thumbnails, `gzip` and `wget` as external process). An S3 account and a dedicated S3 bucket or a SWIFT object storage and a dedicated SWIFT container must have been created for the cloud storage of the data collection. 
 
 The utility will use some local storage dedicated to the embedded databases keeping track of the advancement of the harvesting, metadata and temporary downloaded resources. Consider a few GB of free space for a large scale harvesting of TB of PDF. 
 
