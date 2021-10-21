@@ -708,13 +708,20 @@ class OAHarverster(object):
         # re-init the environments
         self._init_lmdb()
 
-        # if used clean S3 
-        # TBD 
-        
-        # if used SWIFT object storage
+        # if used, clean S3 
+        if self.s3 is not None:
+            # the following is dangerous, we should restrict the deletion to a prefix path
+            '''
+            try: 
+                self.s3.remove_all_files()
+            except:
+                logging.error("Error resetting S3 bucket")
+            '''
+            
+        # if used, SWIFT object storage
         if self.swift is not None:
             try:
-                self.swift.remove_all_file()
+                self.swift.remove_all_files()
             except:
                 logging.error("Error resetting SWIFT object storage")
 

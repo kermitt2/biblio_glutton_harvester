@@ -1,10 +1,15 @@
 import os
 from boto3 import client
 
-"""
-This is derived from:
-https://gist.github.com/freewayz/1fbd00928058c3d682a0e25367cc8ea4
-"""
+# logging
+import logging
+import logging.handlers
+logging.basicConfig(filename='harvester.log', filemode='w', level=logging.DEBUG)
+
+'''
+Note: at this stage, this is quick and dirty... 
+we should examine the response object and properly raise exceptions and manage retry
+'''
 
 class S3(object):
     
@@ -36,7 +41,10 @@ class S3(object):
                 full_path = dest_path + "/" + file_name
         else:
             full_path = file_name
-        s3_client.upload_file(file_path, self.bucket_name, full_path, ExtraArgs={"Metadata": {"StorageClass": storage_class}})
+        try:
+            s3_client.upload_file(file_path, self.bucket_name, full_path, ExtraArgs={"Metadata": {"StorageClass": storage_class}})
+        except:
+            logging.error('Could not upload file', file_path)    
 
     def upload_object(self, body, s3_key, storage_class='STANDARD_IA'):
         """
@@ -60,17 +68,17 @@ class S3(object):
         if not os.path.exists(file_dir):
             os.makedirs(file_dir)
         try:
-            s3_client.download_file(
-                self.bucket_name, file_path, dest_path)
-            return os.path.join(file_dir, filename) 
+            s3_client.download_file(self.bucket_name, file_path, dest_path)
         except:
-            print('Cannot download file', file_path)
-            return
+            logging.error('Could not download file', file_path)
+            return None
+        
+        return os.path.join(file_dir, filename) 
 
     def get_s3_list(self, dir_name):
         """
         Return all contents of a given dir in s3.
-        Goes through the pagination to obtain all file names.
+        Goes through the pagination to obtain all file names, so possibly super inefficient
         """
         dir_name = dir_name.split('tmp/')[-1]
         paginator = self.conn.get_paginator('list_objects')
@@ -86,3 +94,25 @@ class S3(object):
                     s3_file_name = key['Key'].split('/')[-1]
                     bucket_object_list.append(s3_file_name)
         return bucket_object_list
+
+    def remove_file(self, file_path):
+        """
+        Remove an existing file on the current S3 bucket
+        """ 
+        s3_client = self.conn
+        try:
+            s3_client.delete_object(Bucket=self.bucket_name, Key=file_path)
+        except:
+            logging.error('Could not delete file', file_path)
+            return False
+        return True
+
+    def remove_all_files(self):
+        """
+        Empty all the content of the current bucket under the provided path
+        """
+        try:
+            bucket = self.conn.Bucket(self.bucket_name)
+            bucket.objects.all().delete()
+        except Exception as e:
+            logging.exception("Could not empty the bucket " + self.bucket_name)

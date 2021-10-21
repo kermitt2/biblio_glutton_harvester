@@ -129,7 +129,7 @@ class Swift(object):
         except SwiftError:
             logging.exception("error removing file from SWIFT container")
 
-    def remove_all_file(self):
+    def remove_all_files(self):
         """
         Remove all the existing files on the SWIFT object storage
         """

@@ -22,7 +22,7 @@ The utility can be used in particular to harvest the **Unpaywall** dataset (PDF)
 
 ## Requirements
 
-The utility requires Python 3.6 or more. It is developed for a deployment on a POSIX/Linux server (it uses `imagemagick` as external process to generate thumbnails and `wget`). An S3 account and bucket or SWIFT object storage must have been created for cloud storage of the data collection. 
+The utility requires Python 3.6 or more. It is developed for a deployment on a POSIX/Linux server (it uses `imagemagick` as external process to generate thumbnails and `wget`). An S3 account and a dedicated S3 bucket or a SWIFT object storage and a dedicated SWIFT container must have been created for the cloud storage of the data collection. 
 
 The utility will use some local storage dedicated to the embedded databases keeping track of the advancement of the harvesting, metadata and temporary downloaded resources. Consider a few GB of free space for a large scale harvesting of TB of PDF. 
 
@@ -91,6 +91,7 @@ Configuration for a S3 storage uses the following parameters:
 ```
 
 If you are not using a S3 storage, remove these keys or leave these values empty.
+Important: It is assumed that the complete S3 bucket is dedicated to the harvesting. The `--reset` parameter will clear all the objects stored in the bucket, so be careful. 
 
 The configuration for a SWIFT object storage uses the following parameters:
 
@@ -101,7 +102,9 @@ The configuration for a SWIFT object storage uses the following parameters:
 }
 ```
 
-If you are not using a SWIFT storage, remove these keys or leave these above values empty. The `"swift"` key will contain the account and authentication information, typically via Keystone, something like this: 
+If you are not using a SWIFT storage, remove these keys or leave these above values empty. Important: It is assumed that the complete SWIFT container is dedicated to the harvesting. The `--reset` parameter will clear all the objects stored in the container, so be careful. 
+
+The `"swift"` key will contain the account and authentication information, typically via Keystone, something like this: 
 
 ```json
 {
