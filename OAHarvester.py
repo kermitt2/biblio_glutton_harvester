@@ -323,7 +323,7 @@ class OAHarverster(object):
             if (result[0] is None or result[0] == "0" or result[0] == "success") and valid_file:
                 #update DB
                 with self.env.begin(write=True) as txn:
-                    txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(local_entry)) 
+                    txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(_create_map_entry(local_entry))) 
 
                 with self.env_doi.begin(write=True) as txn_doi:
                     txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
@@ -334,7 +334,7 @@ class OAHarverster(object):
                 
                 #update DB
                 with self.env.begin(write=True) as txn:
-                    txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(local_entry))  
+                    txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(_create_map_entry(local_entry)))  
 
                 with self.env_doi.begin(write=True) as txn_doi:
                     txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
@@ -602,10 +602,10 @@ class OAHarverster(object):
             for key, value in cursor:
                 if txn.get(key) is None:
                     continue
-                local_entry = _deserialize_pickle(txn.get(key))
-                local_entry["id"] = key.decode(encoding='UTF-8');
+                map_entry = _deserialize_pickle(txn.get(key))
+                map_entry["id"] = key.decode(encoding='UTF-8');
 
-                map_entry = {}
+                '''map_entry = {}
                 map_entry["id"] = local_entry["id"]
                 if "doi" in local_entry:
                     map_entry["doi"] = local_entry["doi"]
@@ -631,6 +631,7 @@ class OAHarverster(object):
                     resources.append("thumbnails")
 
                 map_entry["resources"] = resources
+                '''
 
                 file_out.write(json.dumps(map_entry))
                 file_out.write("\n")
@@ -1046,7 +1047,6 @@ def _manage_pmc_archives(filename):
             logging.exception("Unexpected error")
             pass
 
-
 def generate_thumbnail(pdfFile):
     """
     Generate a PNG thumbnails (3 different sizes) for the front page of a PDF. 
@@ -1081,6 +1081,38 @@ def _biblio_glutton_url(biblio_glutton_base, biblio_glutton_port):
     if biblio_glutton_port is not None and len(biblio_glutton_port)>0:
         res += ":"+biblio_glutton_port
     return res+"/service/lookup?"
+
+def _create_map_entry(local_entry):
+    '''
+    Create a simple map JSON from the full metadata entry, to be stored locally and for the dumping the JSONL map file
+    '''
+    map_entry = {}
+    map_entry["id"] = local_entry["id"]
+    if "doi" in local_entry:
+        map_entry["doi"] = local_entry["doi"]
+    if "pmid" in local_entry:
+        map_entry["pmid"] = local_entry["pmid"]
+    if "pmcid" in local_entry:
+        map_entry["pmcid"] = local_entry["pmcid"]
+    if "istexId" in local_entry:
+        map_entry["istexId"] = local_entry["istexId"]
+    if "ark" in local_entry:
+        map_entry["ark"] = local_entry["ark"]
+    if "pii" in local_entry:
+        map_entry["pii"] = local_entry["pii"]
+
+    resources = [ "json" ]
+
+    if "valid_fulltext_pdf" in local_entry and local_entry["valid_fulltext_pdf"]:
+        resources.append("pdf")
+    if "valid_fulltext_xml" in local_entry and local_entry["valid_fulltext_xml"]:
+        resources.append("xml")
+
+    if  "valid_thumbnails" in local_entry and local_entry["valid_thumbnails"]:  
+        resources.append("thumbnails")
+
+    map_entry["resources"] = resources
+    return map_entry
 
 def generateStoragePath(identifier):
     '''
