@@ -44,7 +44,7 @@ class S3(object):
         try:
             s3_client.upload_file(file_path, self.bucket_name, full_path, ExtraArgs={"Metadata": {"StorageClass": storage_class}})
         except:
-            logging.error('Could not upload file', file_path)    
+            logging.error('Could not upload file ' + file_path)    
 
     def upload_object(self, body, s3_key, storage_class='STANDARD_IA'):
         """
@@ -60,20 +60,17 @@ class S3(object):
         Download a file given a S3 path and returns the download file path.
         """
         s3_client = self.conn
-        file_name = file_path.split('/')[-1]
+        file_name = os.path.basename(file_path)
 
-        file_name_len = len(file_name)
-        file_path_len = len(file_path)
-        file_dir = dest_path + "/" + file_path[0:file_path_len - file_name_len]
-        if not os.path.exists(file_dir):
-            os.makedirs(file_dir)
+        if not os.path.exists(dest_path):
+            os.makedirs(dest_path)
         try:
             s3_client.download_file(self.bucket_name, file_path, dest_path)
         except:
-            logging.error('Could not download file', file_path)
+            logging.error('Could not download file: ' + file_path)
             return None
         
-        return os.path.join(file_dir, filename) 
+        return os.path.join(dest_path, filename)
 
     def get_s3_list(self, dir_name):
         """
@@ -103,7 +100,7 @@ class S3(object):
         try:
             s3_client.delete_object(Bucket=self.bucket_name, Key=file_path)
         except:
-            logging.error('Could not delete file', file_path)
+            logging.error('Could not delete file: ' + file_path)
             return False
         return True
 

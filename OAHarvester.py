@@ -610,34 +610,6 @@ class OAHarverster(object):
                 map_entry = _deserialize_pickle(txn.get(key))
                 map_entry["id"] = key.decode(encoding='UTF-8');
 
-                '''map_entry = {}
-                map_entry["id"] = local_entry["id"]
-                if "doi" in local_entry:
-                    map_entry["doi"] = local_entry["doi"]
-                if "pmid" in local_entry:
-                    map_entry["pmid"] = local_entry["pmid"]
-                if "pmcid" in local_entry:
-                    map_entry["pmcid"] = local_entry["pmcid"]
-                if "istexId" in local_entry:
-                    map_entry["istexId"] = local_entry["istexId"]
-                if "ark" in local_entry:
-                    map_entry["ark"] = local_entry["ark"]
-                if "pii" in local_entry:
-                    map_entry["pii"] = local_entry["pii"]
-
-                resources = [ "json" ]
-
-                if "valid_fulltext_pdf" in local_entry and local_entry["valid_fulltext_pdf"]:
-                    resources.append("pdf")
-                if "valid_fulltext_xml" in local_entry and local_entry["valid_fulltext_xml"]:
-                    resources.append("xml")
-
-                if  "valid_thumbnails" in local_entry and local_entry["valid_thumbnails"]:  
-                    resources.append("thumbnails")
-
-                map_entry["resources"] = resources
-                '''
-
                 file_out.write(json.dumps(map_entry))
                 file_out.write("\n")
 
@@ -645,15 +617,16 @@ class OAHarverster(object):
         if self.s3 is not None:
             # we back-up existing map file on S3
             dump_file_name = os.path.basename(dump_file)
-            shutil.move(dump_file, dump_file+"new")
+            shutil.move(dump_file, dump_file+".new")
             try:
                 path_for_old = os.path.join(self.config["data_path"], dump_file_name+".old")
                 # TBD: check if the file exists to avoid the 404 exception
-                self.s3.download_file(dump_file_name, path_for_old)
+                self.s3.download_file(dump_file_name, self.config["data_path"])
+                shutil.move(os.path.join(self.config["data_path"], dump_file_name), path_for_old)
                 self.s3.upload_file_to_s3(path_for_old, None)
             except:
                 logging.debug("no map file on SWIFT object storage")
-            shutil.move(dump_file+"new", dump_file)
+            shutil.move(dump_file+".new", dump_file)
 
             # upload to S3 
             try:
@@ -665,7 +638,7 @@ class OAHarverster(object):
         elif self.swift is not None:
             # we back-up existing map file on the SWIFT container
             dump_file_name = os.path.basename(dump_file)
-            shutil.move(dump_file, dump_file+"new")
+            shutil.move(dump_file, dump_file+".new")
             try:
                 path_for_old = os.path.join(self.config["data_path"], dump_file_name+".old")
                 # TBD: check if the file exists to avoid the 404 exception
@@ -673,7 +646,7 @@ class OAHarverster(object):
                 self.swift.upload_file_to_swift(path_for_old, None)
             except:
                 logging.debug("no map file on SWIFT object storage")
-            shutil.move(dump_file+"new", dump_file)
+            shutil.move(dump_file+".new", dump_file)
 
             # new map file to SWIFT object storage
             try:
