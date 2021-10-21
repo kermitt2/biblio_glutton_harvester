@@ -32,6 +32,10 @@ logging.basicConfig(filename='harvester.log', filemode='w', level=logging.DEBUG)
 
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+logging.getLogger("urllib3").setLevel(logging.ERROR)
+
+logging.getLogger("keystoneclient").setLevel(logging.ERROR)
+logging.getLogger("swiftclient").setLevel(logging.ERROR)
 
 biblio_glutton_url = None
 crossref_base = None
@@ -633,7 +637,17 @@ class OAHarverster(object):
 
         # copy/upload mapping dump file
         if self.s3 is not None:
-            # we should back-up existing map file on S3
+            # we back-up existing map file on S3
+            dump_file_name = os.path.basename(dump_file)
+            shutil.move(dump_file, dump_file+"new")
+            try:
+                path_for_old = os.path.join(self.config["data_path"], dump_file_name+".old")
+                # TBD: check if the file exists to avoid the 404 exception
+                self.s3.download_file(dump_file_name, path_for_old)
+                self.s3.upload_file_to_s3(path_for_old, None)
+            except:
+                logging.debug("no map file on SWIFT object storage")
+            shutil.move(dump_file+"new", dump_file)
 
             # upload to S3 
             try:
@@ -643,11 +657,12 @@ class OAHarverster(object):
                 logging.error("Error writing on S3 bucket")
 
         elif self.swift is not None:
-            # we should back-up existing map file on the SWIFT container
+            # we back-up existing map file on the SWIFT container
             dump_file_name = os.path.basename(dump_file)
             shutil.move(dump_file, dump_file+"new")
             try:
                 path_for_old = os.path.join(self.config["data_path"], dump_file_name+".old")
+                # TBD: check if the file exists to avoid the 404 exception
                 self.swift.download_file(dump_file_name, path_for_old)
                 self.swift.upload_file_to_swift(path_for_old, None)
             except:
@@ -663,7 +678,7 @@ class OAHarverster(object):
 
         # always save under local storage indicated by data_path in the config json, and backup the previous one
         try:
-            # rename existing one as .old
+            # back-up previous map file: rename existing one as .old
             dump_file_name = os.path.basename(dump_file)
             if os.path.isfile(os.path.join(self.config["data_path"], dump_file_name)):
                 shutil.move(os.path.join(self.config["data_path"], dump_file_name), os.path.join(self.config["data_path"], dump_file_name+".old"))
@@ -717,7 +732,7 @@ class OAHarverster(object):
             except:
                 logging.error("Error resetting S3 bucket")
             '''
-            
+
         # if used, SWIFT object storage
         if self.swift is not None:
             try:

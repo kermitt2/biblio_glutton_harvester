@@ -209,10 +209,9 @@ For harvesting only a predifined random number of entries and not the whole sets
 
 This command will harvest 2000 PDF randomly distributed in the complete PMC set. For the Unpaywall set, as around 20% of the entries only have an Open Access PDF, you will need to multiply by 5 the sample number, e.g. if you wish 2000 PDF, indicate `--sample 10000`. 
 
-
 ### Map for identifier mapping
 
-A mapping with the UUID and the main identifiers of the entries can be dumped in JSONL (default file name is `map.jsonl`) with the following command:
+A mapping with the UUID associated with an Open Access full text resource and the main identifiers of the entries can be dumped in JSONL (default file name is `map.jsonl`) with the following command:
 
 ```bash
 > python3 OAHarvester.py --dump output.jsonl
@@ -220,7 +219,7 @@ A mapping with the UUID and the main identifiers of the entries can be dumped in
 
 By default, this map is always generated at the completion of an harvesting or re-harvesting. This mapping is necessary for further usage and for accessing resources associated to an entry (listing million files directly with AWS S3 is by far too slow, we thus need a local index/catalog).
 
-In the JSONL dump, each entry is present with its UUID given by the attribute `id`, its main identifiers (`doi`, `pmid`, `pmcid`, `pii`, `istextId`) and the list of available harvested resources.
+In the JSONL dump, each entry identified as available Open Access is present with its UUID given by the attribute `id`, its main identifiers (`doi`, `pmid`, `pmcid`, `pii`, `istextId`) and the list of available harvested resources.
 
 ```json
 { 
@@ -243,6 +242,8 @@ The UUID can then be used for accessing the resources for this entry, the prefix
 - thumbnail large (500px width): `1b/a0/cc/e3/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2-thumb-large.png`
 
 Depending on the config, the resources can be accessed either locally under `data_path` or on AWS S3 following the URL prefix: `https://bucket_name.s3.amazonaws.com/`, for instance `https://bucket_name.s3.amazonaws.com/1b/a0/cc/e3/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2/1ba0cce3-335b-46d8-b29f-9cdfb6430fd2.pdf` - if you have set the appropriate access rights. The same applies to a SWIFT object storage based on the container name indicated in the config file. 
+
+Only entries available in Open Access according to Unpaywall or PMC are present in the JSONL map file. If an entry is present in the JSONL map file but without a full text resource (`"pdf"` or "`"xml"`), it means that the harvesting of the Open Access file has failed. 
 
 ## Troubleshooting with imagemagick
 

@@ -27,7 +27,7 @@ class Swift(object):
                         i_name = item["name"]
                         container_names.append(i_name)
                         if i_name == self.config["swift_container"]:
-                            print(item)
+                            print("using SWIFT", self.config["swift_container"], "container:", item)
                 else:
                     logging.error("error listing SWIFT object storage containers")
 
