@@ -433,6 +433,38 @@ class OAHarverster(object):
         with open(local_filename_json, 'w') as outfile:
             json.dump(local_entry, outfile)
 
+        compression_suffix = ""
+        if self.config["compression"]:
+            compression_suffix = ".gz"
+
+            try:
+                if os.path.isfile(local_filename):
+                    subprocess.check_call(['gzip', '-f', local_filename])
+                    local_filename += compression_suffix
+
+                if os.path.isfile(local_filename_nxml):
+                    subprocess.check_call(['gzip', '-f', local_filename_nxml])
+                    local_filename_nxml += compression_suffix
+
+                if os.path.isfile(local_filename_json):
+                    subprocess.check_call(['gzip', '-f', local_filename_json])
+                    local_filename_json += compression_suffix
+
+                if (self.thumbnail):
+                    if os.path.isfile(thumb_file_small):
+                        subprocess.check_call(['gzip', '-f', thumb_file_small])
+                        thumb_file_small += compression_suffix
+
+                    if os.path.isfile(thumb_file_medium): 
+                        subprocess.check_call(['gzip', '-f', thumb_file_medium])
+                        thumb_file_medium += compression_suffix
+
+                    if os.path.isfile(thumb_file_large): 
+                        subprocess.check_call(['gzip', '-f', thumb_file_large])
+                        thumb_file_large += compression_suffix
+            except:
+                logging.error("Error compressing resource files for " + local_entry['id'])
+
         if self.s3 is not None:
             # upload to S3 
             # upload is already in parallel for individual file (with parts)
@@ -491,21 +523,21 @@ class OAHarverster(object):
 
                 os.makedirs(local_dest_path, exist_ok=True)
                 if os.path.isfile(local_filename):
-                    shutil.copyfile(local_filename, os.path.join(local_dest_path, local_entry['id']+".pdf"))
+                    shutil.copyfile(local_filename, os.path.join(local_dest_path, local_entry['id']+".pdf"+compression_suffix))
                 if os.path.isfile(local_filename_nxml):
-                    shutil.copyfile(local_filename_nxml, os.path.join(local_dest_path, local_entry['id']+".nxml"))
+                    shutil.copyfile(local_filename_nxml, os.path.join(local_dest_path, local_entry['id']+".nxml"+compression_suffix))
                 if os.path.isfile(local_filename_json):
-                    shutil.copyfile(local_filename_json, os.path.join(local_dest_path, local_entry['id']+".json"))
+                    shutil.copyfile(local_filename_json, os.path.join(local_dest_path, local_entry['id']+".json"+compression_suffix))
 
                 if (self.thumbnail):
                     if os.path.isfile(thumb_file_small):
-                        shutil.copyfile(thumb_file_small, os.path.join(local_dest_path, local_entry['id']+"-thumb-small.png"))
+                        shutil.copyfile(thumb_file_small, os.path.join(local_dest_path, local_entry['id']+"-thumb-small.png")+compression_suffix)
 
                     if os.path.isfile(thumb_file_medium):
-                        shutil.copyfile(thumb_file_medium, os.path.join(local_dest_path, local_entry['id']+"-thumb-medium.png"))
+                        shutil.copyfile(thumb_file_medium, os.path.join(local_dest_path, local_entry['id']+"-thumb-medium.png")+compression_suffix)
 
                     if os.path.isfile(thumb_file_large):
-                        shutil.copyfile(thumb_file_large, os.path.join(local_dest_path, local_entry['id']+"-thumb-larger.png"))
+                        shutil.copyfile(thumb_file_large, os.path.join(local_dest_path, local_entry['id']+"-thumb-larger.png")+compression_suffix)
 
             except IOError:
                 logging.exception("invalid path")
@@ -612,6 +644,10 @@ class OAHarverster(object):
 
                 file_out.write(json.dumps(map_entry))
                 file_out.write("\n")
+
+        if self.config["compression"]:
+            subprocess.check_call(['gzip', '-f', dump_file])
+            dump_file += ".gz"
 
         # copy/upload mapping dump file
         if self.s3 is not None:
