@@ -458,24 +458,29 @@ class OAHarverster(object):
                 logging.error("Error writing on S3 bucket")
 
         elif self.swift is not None:
-            # to SWIFT object storage
+            # to SWIFT object storage, we can do a bulk upload for all the resources associated to the entry
             try:
+                files_to_upload = []
                 if os.path.isfile(local_filename):
-                    self.swift.upload_file_to_swift(local_filename, dest_path)
+                    files_to_upload.append(local_filename)
                 if os.path.isfile(local_filename_nxml):
-                    self.swift.upload_file_to_swift(local_filename_nxml, dest_path)
+                    files_to_upload.append(local_filename_nxml)
                 if os.path.isfile(local_filename_json):
-                    self.swift.upload_file_to_swift(local_filename_json, dest_path)
+                    files_to_upload.append(local_filename_json)
 
                 if (self.thumbnail):
                     if os.path.isfile(thumb_file_small):
-                        self.swift.upload_file_to_swift(thumb_file_small, dest_path)
+                        files_to_upload.append(thumb_file_small)
 
                     if os.path.isfile(thumb_file_medium): 
-                        self.swift.upload_file_to_swift(thumb_file_medium, dest_path)
+                        files_to_upload.append(thumb_file_medium)
 
                     if os.path.isfile(thumb_file_large): 
-                        self.swift.upload_file_to_swift(thumb_file_large, dest_path)
+                        files_to_upload.append(thumb_file_large)
+
+                if len(files_to_upload)>0:
+                    self.swift.upload_files_to_swift(files_to_upload, dest_path)
+
             except:
                 logging.error("Error writing on SWIFT object storage")
 

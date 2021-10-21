@@ -75,6 +75,33 @@ class Swift(object):
         except SwiftError:
             logging.exception("error uploading file to SWIFT container")
 
+    def upload_files_to_swift(self, file_paths, dest_path=None):
+        """
+        Bulk upload of a list of files to current SWIFT object storage container under the same destination path
+        """
+        objs = []
+
+        # file object
+        for file_path in file_paths:
+            file_name = os.path.basename(file_path)
+            object_name = file_name
+            if dest_path != None:
+                object_name = dest_path + "/" + file_name
+                
+            obj = SwiftUploadObject(file_path, object_name=object_name)
+            objs.append(obj)
+
+        try:
+            for result in self.swift.upload(self.config["swift_container"], objs):
+                if not result['success']:
+                    error = result['error']
+                    if result['action'] == "upload_object":
+                        logging.error("Failed to upload object %s to container %s: %s" % (self.config["swift_container"], result['object'], error))
+                    else:
+                        logging.error("%s" % error)
+        except SwiftError:
+            logging.exception("error uploading file to SWIFT container")
+
     def download_file(self, file_path, dest_path):
         """
         Download a file given a path and returns the download destination file path.
