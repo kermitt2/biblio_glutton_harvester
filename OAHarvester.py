@@ -626,12 +626,24 @@ class OAHarverster(object):
                 self.processBatchReprocess(urls, filenames, entries)
                 pbar.update(total_processed)
 
-    def dump(self, dump_file):
+    def dump(self, dump_file, fail_file=None):
+        '''
+        Write a catalogue for the harvested Open Access resources, mapping all the OA UUID with strong identifiers
+        (doi, pimd, ...). Optionally, write an additional file with only havesting failures for OA entries.
+        '''
+
         # init lmdb transactions
         txn = self.env.begin(write=True)
         
         nb_total = txn.stat()['entries']
         print("number of entries with OA link:", nb_total)
+
+        file_out_fail = None
+        if fail_file != None:
+            try:
+                file_out_fail = open(fail_file,'w')
+            except:
+                logging.exception("Could not open dump file for havesting fail failure report")
 
         with open(dump_file,'w') as file_out:
             # iterate over lmdb
@@ -642,12 +654,24 @@ class OAHarverster(object):
                 map_entry = _deserialize_pickle(txn.get(key))
                 map_entry["id"] = key.decode(encoding='UTF-8');
 
-                file_out.write(json.dumps(map_entry))
+                json_local_entry = json.dumps(map_entry)
+                file_out.write(json_local_entry)
                 file_out.write("\n")
+
+                if file_out_fail != None:
+                    if 'resources' in json_local_entry and not 'pdf' in json_local_entry['resources'] and not 'xml' in json_local_entry['resources']:               
+                        file_out_fail.write(json.dumps(map_entry))
+                        file_out_fail.write("\n")
+
+        if file_out_fail != None:
+            file_out_fail.close()
 
         if self.config["compression"]:
             subprocess.check_call(['gzip', '-f', dump_file])
             dump_file += ".gz"
+            if fail_file != None:
+                subprocess.check_call(['gzip', '-f', fail_file])
+                fail_file += ".gz"
 
         # copy/upload mapping dump file
         if self.s3 is not None:
@@ -739,14 +763,16 @@ class OAHarverster(object):
         self._init_lmdb()
 
         # if used, clean S3 
+        """
         if self.s3 is not None:
-            # the following is dangerous, we should restrict the deletion to a prefix path
+            # the following is dangerous I think, we should restrict the deletion to a prefix path
             '''
             try: 
                 self.s3.remove_all_files()
             except:
                 logging.error("Error resetting S3 bucket")
             '''
+        """
 
         # if used, SWIFT object storage
         if self.swift is not None:
