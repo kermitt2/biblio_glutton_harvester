@@ -139,7 +139,7 @@ Also note that:
 
 
 ```
-usage: OAHarvester.py [-h] [--unpaywall UNPAYWALL] [--pmc PMC] [--config CONFIG] [--dump DUMP]
+usage: python3 OAHarvester.py [-h] [--unpaywall UNPAYWALL] [--pmc PMC] [--config CONFIG] [--dump DUMP]
                       [--reprocess] [--reset] [--thumbnail] [--sample SAMPLE]
 
 Open Access PDF harvester
