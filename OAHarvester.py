@@ -808,8 +808,8 @@ def _biblio_glutton_lookup(biblio_glutton_url, doi=None, pmcid=None, pmid=None, 
         if success:
             jsonResult = response.json()
 
-    if not success and pmid is not None and len(pmid)>0:
-        response = requests.get(biblio_glutton_url + "pmid=" + pmid, verify=False, timeout=5)
+    if not success and pmid is not None and len(str(pmid))>0:
+        response = requests.get(biblio_glutton_url + "pmid=" + str(pmid), verify=False, timeout=5)
         success = (response.status_code == 200)
         if success:
             jsonResult = response.json()     
