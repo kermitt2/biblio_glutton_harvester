@@ -254,7 +254,7 @@ class OAHarverster(object):
                 tokens = line.split('\t')
                 subpath = tokens[0]
                 pmcid = tokens[2]
-                pmid = tokens[3]
+                pmid = str(tokens[3])
                 ind = pmid.find(":")
                 if ind != -1:
                     pmid = pmid[ind+1:]
