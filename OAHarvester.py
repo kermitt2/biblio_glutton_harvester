@@ -803,28 +803,40 @@ def _biblio_glutton_lookup(biblio_glutton_url, doi=None, pmcid=None, pmid=None, 
     jsonResult = None
 
     if doi is not None and len(doi)>0:
-        response = requests.get(biblio_glutton_url, params={'doi': doi}, verify=False, timeout=5)
-        success = (response.status_code == 200)
-        if success:
-            jsonResult = response.json()
+        try:
+            response = requests.get(biblio_glutton_url, params={'doi': doi}, verify=False, timeout=5)
+            success = (response.status_code == 200)
+            if success:
+                jsonResult = response.json()
+        except:
+            logging.exception("Could not connect to biblio-glutton for DOI look-up")
 
     if not success and pmid is not None and len(str(pmid))>0:
-        response = requests.get(biblio_glutton_url + "pmid=" + str(pmid), verify=False, timeout=5)
-        success = (response.status_code == 200)
-        if success:
-            jsonResult = response.json()     
+        try:
+            response = requests.get(biblio_glutton_url + "pmid=" + str(pmid), verify=False, timeout=5)
+            success = (response.status_code == 200)
+            if success:
+                jsonResult = response.json()     
+        except:
+            logging.exception("Could not connect to biblio-glutton for PMID look-up")
 
     if not success and pmcid is not None and len(pmcid)>0:
-        response = requests.get(biblio_glutton_url + "pmc=" + pmcid, verify=False, timeout=5)  
-        success = (response.status_code == 200)
-        if success:
-            jsonResult = response.json()
+        try:
+            response = requests.get(biblio_glutton_url + "pmc=" + pmcid, verify=False, timeout=5)  
+            success = (response.status_code == 200)
+            if success:
+                jsonResult = response.json()
+        except:
+            logging.exception("Could not connect to biblio-glutton for PMC ID look-up")        
 
     if not success and istex_id is not None and len(istex_id)>0:
-        response = requests.get(biblio_glutton_url + "istexid=" + istex_id, verify=False, timeout=5)
-        success = (response.status_code == 200)
-        if success:
-            jsonResult = response.json()
+        try:
+            response = requests.get(biblio_glutton_url + "istexid=" + istex_id, verify=False, timeout=5)
+            success = (response.status_code == 200)
+            if success:
+                jsonResult = response.json()
+        except:
+            logging.exception("Could not connect to biblio-glutton for ISTEX ID look-up")
     
     if not success and doi is not None and len(doi)>0 and crossref_base != None:
         # let's call crossref as fallback for possible X-months gap in biblio-glutton
@@ -833,15 +845,18 @@ def _biblio_glutton_lookup(biblio_glutton_url, doi=None, pmcid=None, pmid=None, 
             user_agent = {'User-agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:81.0) Gecko/20100101 Firefox/81.0 (mailto:'+crossref_email + ')'}
         else:
             user_agent = {'User-agent': _get_random_user_agent()}
-        response = requests.get(crossref_base+"/works/"+doi, headers=user_agent, verify=False, timeout=5)
-        if response.status_code == 200:
-            jsonResult = response.json()['message']
-            # filter out references and re-set doi, in case there are obtained via crossref
-            if "reference" in jsonResult:
-                del jsonResult["reference"]
-        else:
-            success = False
-            jsonResult = None
+        try:
+            response = requests.get(crossref_base+"/works/"+doi, headers=user_agent, verify=False, timeout=5)
+            if response.status_code == 200:
+                jsonResult = response.json()['message']
+                # filter out references and re-set doi, in case there are obtained via crossref
+                if "reference" in jsonResult:
+                    del jsonResult["reference"]
+            else:
+                success = False
+                jsonResult = None
+        except:
+            logging.exception("Could not connect to CrossRef")
     
     return jsonResult
 
