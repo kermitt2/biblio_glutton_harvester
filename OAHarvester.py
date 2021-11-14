@@ -100,7 +100,7 @@ class OAHarverster(object):
         envFilePath = os.path.join(self.config["data_path"], 'fail')
         self.env_fail = lmdb.open(envFilePath, map_size=map_size)
 
-    def harvestUnpaywall(self, filepath):   
+    def harvestUnpaywall(self, filepath, reprocess=False):   
         """
         Main method, use the Unpaywall dataset for getting pdf url for Open Access resources, 
         download in parallel PDF, generate thumbnails (if selected), upload resources locally 
@@ -128,7 +128,7 @@ class OAHarverster(object):
                 buffer = gz.read(8192*1024)
                 if not buffer: break
                 count += buffer.count(b'\n')
-        print("total entries: " + str(count))
+        print("total entries found: " + str(count))
 
         if self.sample is not None:
             # random selection corresponding to the requested sample size
@@ -156,9 +156,31 @@ class OAHarverster(object):
             doi = entry['doi']
 
             # check if the entry has already been processed
-            if self.getUUIDByIdentifier(doi) is not None:
-                position += 1
-                continue
+            id_candidate = self.getUUIDByIdentifier(doi)
+            if id_candidate is not None:
+                id_candidate = id_candidate.decode("utf-8") 
+                if reprocess:
+                    entry['id'] = id_candidate
+                    # did we success with this entry?  
+                    with self.env.begin() as txn:
+                        local_object = txn.get(id_candidate.encode(encoding='UTF-8'))
+                        if local_object != None:
+                            local_entry = _deserialize_pickle(local_object)
+                            if local_entry != None:
+                                if "resources" in local_entry and "pdf" in local_entry["resources"]:
+                                    # we have a PDF, so no need to reprocess and we skip
+                                    position += 1
+                                    continue
+                    # otherwise we consider the entry for reprocessing
+                else:
+                    # we don't reprocess existing entries
+                    position += 1
+                    continue
+            else:
+                # store a UUID
+                entry['id'] = str(uuid.uuid4())
+                with self.env_doi.begin(write=True) as txn_doi:
+                    txn_doi.put(entry['doi'].encode(encoding='UTF-8'), entry['id'].encode(encoding='UTF-8'))
 
             if not 'best_oa_location' in entry and 'oa_locations' in entry and len(entry['oa_locations'])>0:
                 # this is a fallback in case we don't have the `best_oa_location` part (it should not happen
@@ -166,20 +188,20 @@ class OAHarverster(object):
                 entry['best_oa_location'] = entry['oa_locations'][0]
 
             if 'best_oa_location' in entry:
-                if entry['best_oa_location'] is not None:
-                    if 'url_for_pdf' in entry['best_oa_location']:
-                        pdf_url = entry['best_oa_location']['url_for_pdf']
-                        if pdf_url is not None:    
-                            #print(pdf_url)
-                            urls.append(pdf_url)
-                            # TBD: consider alternative non-best PDF URL for fallback solution?
+                if entry['best_oa_location'] is not None and 'url_for_pdf' in entry['best_oa_location']:
+                    pdf_url = entry['best_oa_location']['url_for_pdf']
+                    if pdf_url is not None:    
+                        #print(pdf_url)
+                        urls.append(pdf_url)
+                        # TBD: consider alternative non-best PDF URL for fallback solution?
 
-                            entry['id'] = str(uuid.uuid4())
-                            entries.append(entry)
-                            filenames.append(os.path.join(self.config["data_path"], entry['id']+".pdf"))
-                            i += 1
-                    if "is_best" in entry['best_oa_location']:
-                        del entry['best_oa_location']['is_best']
+                        #if not 'id' in entry:
+                        #    entry['id'] = str(uuid.uuid4())
+                        entries.append(entry)
+                        filenames.append(os.path.join(self.config["data_path"], entry['id']+".pdf"))
+                        i += 1
+                        if "is_best" in entry['best_oa_location']:
+                            del entry['best_oa_location']['is_best']
             position += 1
             
         gz.close()
@@ -189,9 +211,9 @@ class OAHarverster(object):
             self.processBatch(urls, filenames, entries)
             n += len(urls)
 
-        print("total entries:", n)
+        print("total processed entries:", n)
 
-    def harvestPMC(self, filepath):   
+    def harvestPMC(self, filepath, reprocess=False):   
         """
         Main method for PMC, use the provided PMC list file for getting pdf url for Open Access resources, 
         or download the list file on NIH server if not provided, download in parallel PDF, generate thumbnails, 
@@ -222,7 +244,7 @@ class OAHarverster(object):
                 if not buffer: break
                 count += buffer.count(b'\n')
 
-        print("total entries: " + str(count))
+        print("total entries found: " + str(count))
 
         if self.sample is not None:
             # random selection corresponding to the requested sample size
@@ -268,17 +290,46 @@ class OAHarverster(object):
                     position += 1
                     continue
 
+                entry = {}
+                entry['pmid'] = pmid
+                # TODO: avoid depending on instanciated DOI
+                entry['doi'] = pmcid
+
+                # check if the entry has already been processed
+                id_candidate = self.getUUIDByIdentifier(pmcid)
+                if id_candidate is not None:
+                    id_candidate = id_candidate.decode("utf-8") 
+                    if reprocess:
+                        entry['id'] = id_candidate
+                        # did we success with this entry?  
+                        with self.env.begin() as txn:
+                            local_object = txn.get(id_candidate.encode(encoding='UTF-8'))
+                            if local_object != None:
+                                local_entry = _deserialize_pickle(local_object)
+                                if local_entry != None:
+                                    if "resources" in local_entry and "pdf" in local_entry["resources"]:
+                                        # we have a PDF, so no need to reprocess and we skip
+                                        position += 1
+                                        continue
+                        # otherwise we consider the entry for reprocessing
+                    else:
+                        # we don't reprocess existing entries
+                        position += 1
+                        continue
+                else:
+                    # store a UUID
+                    entry['id'] = str(uuid.uuid4())
+                    with self.env_doi.begin(write=True) as txn_doi:
+                        txn_doi.put(entry['doi'].encode(encoding='UTF-8'), entry['id'].encode(encoding='UTF-8'))
+
                 if subpath is not None:
-                    entry = {}
                     tar_url = pmc_base + subpath
                     #print(tar_url)
                     urls.append(tar_url)
 
-                    entry['id'] = str(uuid.uuid4())
-                    entry['pmcid'] = pmcid
-                    entry['pmid'] = pmid
-                    # TODO: avoid depending on instanciated DOI
-                    entry['doi'] = pmcid
+                    #entry['id'] = str(uuid.uuid4())
+                    #entry['pmcid'] = pmcid
+                    
                     entry_url = {}
                     entry_url['url_for_pdf'] = tar_url
                     entry['best_oa_location'] = entry_url
@@ -293,7 +344,7 @@ class OAHarverster(object):
             self.processBatch(urls, filenames, entries)
             n += len(urls)
 
-        print("total entries:", n)
+        print("total processed entries:", n)
 
     def processBatch(self, urls, filenames, entries):#, txn, txn_doi, txn_fail):
         with ThreadPoolExecutor(max_workers=12) as executor:
@@ -325,8 +376,8 @@ class OAHarverster(object):
                 with self.env.begin(write=True) as txn:
                     txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(_create_map_entry(local_entry))) 
 
-                with self.env_doi.begin(write=True) as txn_doi:
-                    txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
+                #with self.env_doi.begin(write=True) as txn_doi:
+                #    txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
 
                 entries.append(local_entry)
             else:
@@ -336,58 +387,13 @@ class OAHarverster(object):
                 with self.env.begin(write=True) as txn:
                     txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(_create_map_entry(local_entry)))  
 
-                with self.env_doi.begin(write=True) as txn_doi:
-                    txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
+                #with self.env_doi.begin(write=True) as txn_doi:
+                #    txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
 
                 with self.env_fail.begin(write=True) as txn_fail:
                     txn_fail.put(local_entry['id'].encode(encoding='UTF-8'), result[0].encode(encoding='UTF-8'))
 
                 # if an empty pdf or tar file is present, we clean it
-                local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
-                if os.path.isfile(local_filename): 
-                    os.remove(local_filename)
-                local_filename = os.path.join(self.config["data_path"], local_entry['id']+".tar.gz")
-                if os.path.isfile(local_filename): 
-                    os.remove(local_filename)
-                local_filename = os.path.join(self.config["data_path"], local_entry['id']+".nxml")
-                if os.path.isfile(local_filename): 
-                    os.remove(local_filename)
-
-        # finally we can parallelize the thumbnail/upload/file cleaning steps for this batch
-        with ThreadPoolExecutor(max_workers=12) as executor:
-            results = executor.map(self.manageFiles, entries, timeout=30)
-
-
-    def processBatchReprocess(self, urls, filenames, entries):#, txn, txn_doi, txn_fail):
-        with ThreadPoolExecutor(max_workers=12) as executor:
-            results = executor.map(_download, urls, filenames, entries, timeout=50)
-        
-        # LMDB write transactions in the thread that created the transaction
-        entries = []
-        for result in results: 
-            local_entry = result[1]
-
-            valid_file = False
-            local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
-            if os.path.isfile(local_filename): 
-                if _is_valid_file(local_filename, "pdf"):
-                    valid_file = True
-                    local_entry["valid_fulltext_pdf"] = True
-            
-            local_filename = os.path.join(self.config["data_path"], local_entry['id']+".nxml")
-            if os.path.isfile(local_filename): 
-                if _is_valid_file(local_filename, "xml"):
-                    valid_file = True
-                    local_entry["valid_fulltext_xml"] = True
-
-            if (result[0] is None or result[0] == "0" or result[0] == "success") and valid_file:
-                entries.append(local_entry)
-                # remove the entry in fail, as it is now sucessful
-                with self.env_fail.begin(write=True) as txn_fail2:
-                    txn_fail2.delete(local_entry['id'].encode(encoding='UTF-8'))
-            else:
-                # still an error
-                # if an empty pdf file is present, we clean it
                 local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
                 if os.path.isfile(local_filename): 
                     os.remove(local_filename)
@@ -565,67 +571,7 @@ class OAHarverster(object):
                     os.remove(thumb_file_large)
         except IOError:
             logging.exception("temporary file cleaning failed")   
-
-
-    def reprocessFailed(self):
-        """
-        Retry to access OA resources stored in the fail lmdb
-        """
-        batch_size_pdf = self.config['batch_size']
-        # batch size for lmdb commit
-        batch_size_lmdb = 100 
-        n = 0
-        i = 0
-        urls = []
-        entries = []
-        filenames = []
-        
-        with self.env.begin(write=True) as txn:
-            nb_total = txn.stat()['entries']
-
-        with self.env_fail.begin(write=True) as txn_fail:
-            nb_fails = txn_fail.stat()['entries']
-        
-        print("number of failed entries with OA link:", nb_fails, "out of", nb_total, "entries")
-
-        with tqdm(total=nb_fails) as pbar: 
-            # iterate over the fail lmdb
-            with self.env.begin(write=True) as txn:
-                cursor = txn.cursor()
-                total_processed = 0
-                for key, value in cursor:
-                    if i == batch_size_pdf:
-                        self.processBatchReprocess(urls, filenames, entries)#, txn, txn_doi, txn_fail)
-                        # reinit
-                        i = 0
-                        urls = []
-                        entries = []
-                        filenames = []
-                        n += batch_size_pdf
-                        pbar.update(total_processed)
-
-                    with self.env_fail.begin() as txn_f:
-                        value_error = txn_f.get(key)
-                        if value_error is None:
-                           continue
-
-                    local_entry = _deserialize_pickle(value)
-                    pdf_url = local_entry['best_oa_location']['url_for_pdf']  
-                    #print(pdf_url)
-                    urls.append(pdf_url)
-                    entries.append(local_entry)
-                    if pdf_url.endswith(".tar.gz"):
-                        filenames.append(os.path.join(self.config["data_path"], local_entry['id']+".tar.gz"))
-                    else:  
-                        filenames.append(os.path.join(self.config["data_path"], local_entry['id']+".pdf"))
-                    i += 1
-                    total_processed += 1
-
-            # we need to process the latest incomplete batch (if not empty)
-            if len(urls)>0:
-                self.processBatchReprocess(urls, filenames, entries)
-                pbar.update(total_processed)
-
+    
     def dump(self, dump_file, fail_file=None):
         '''
         Write a catalogue for the harvested Open Access resources, mapping all the OA UUID with strong identifiers
@@ -1167,6 +1113,13 @@ def _create_map_entry(local_entry):
         resources.append("thumbnails")
 
     map_entry["resources"] = resources
+
+    # add target OA link
+    if 'best_oa_location' in local_entry and 'url_for_pdf' in local_entry['best_oa_location']:
+        pdf_url = local_entry['best_oa_location']['url_for_pdf']
+        if pdf_url is not None:    
+            map_entry["oa_link"] = pdf_url
+
     return map_entry
 
 def generateStoragePath(identifier):
@@ -1225,14 +1178,11 @@ if __name__ == "__main__":
 
     start_time = time.time()
 
-    if reprocess:
-        harvester.reprocessFailed()
-        harvester.diagnostic()
-    elif unpaywall is not None: 
-        harvester.harvestUnpaywall(unpaywall)
+    if unpaywall is not None: 
+        harvester.harvestUnpaywall(unpaywall, reprocess)
         harvester.diagnostic()
     elif pmc is not None: 
-        harvester.harvestPMC(pmc)
+        harvester.harvestPMC(pmc, reprocess)
         harvester.diagnostic()
 
     runtime = round(time.time() - start_time, 3)

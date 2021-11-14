@@ -259,6 +259,20 @@ A relatively recent update (end of October 2018) of imagemagick is breaking the 
 <!-- <policy domain="coder" rights="none" pattern="PDF" /> -->
 ```
 
+## Building and deploying a Docker container
+
+You need `docker` and `docker-compose` installed on your system. 
+
+A `docker-compose.yml` file is available with the project, but you will need additionally:
+
+- to update a configuration file according to your storage requirements (local, S3 or SWIFT)
+
+- to create an external volume to store the embedded databases keeping track of the advancement of the harvesting, metadata and temporary downloaded resources, it's also on this external volume that the input file must be stored (the unpaywall dump file or the NIH PMC identifier list file) 
+
+```console
+docker-compose run --rm harvester
+```
+
 ## License and contact
 
 Distributed under [Apache 2.0 license](http://www.apache.org/licenses/LICENSE-2.0). The dependencies used in the project are either themselves also distributed under Apache 2.0 license or distributed under a compatible license. 
