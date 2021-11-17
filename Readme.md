@@ -222,12 +222,10 @@ A mapping with the UUID associated with an Open Access full text resource and th
 
 By default, this map is always generated at the completion of an harvesting or re-harvesting. This mapping is necessary for further usage and for accessing resources associated to an entry (listing million files directly with AWS S3 is by far too slow, we thus need a local index/catalog).
 
-In the JSONL dump, each entry identified as available Open Access is present with its UUID given by the attribute `id`, its main identifiers (`doi`, `pmid`, `pmcid`, `pii`, `istextId`) and the list of available harvested resources.
+In the JSONL dump, each entry identified as available Open Access is present with its UUID given by the attribute `id`, its main identifiers (`doi`, `pmid`, `pmcid`, `pii`, `istextId`), the list of available harvested resources and the target best Open Access URL considered.
 
 ```json
-{ 
-    "id": "904689c2-b25b-452d-a38e-81114e7509bf", "doi": "10.1001/jama.2016.1952", "pmid": 26978209, "resources": ["json", "pdf"]
-}
+{"id": "00005fb2-0969-4ed6-92b3-0552f3fa283c", "doi": "10.1001/jamanetworkopen.2019.13325", "pmid": 31617925, "resources": ["json", "pdf"], "oa_link": "https://jamanetwork.com/journals/jamanetworkopen/articlepdf/2752991/ganguli_2019_oi_190509.pdf"}
 ```
 
 The UUID can then be used for accessing the resources for this entry, the prefix path being based on the first 8 characters of the UUID, as follow: 

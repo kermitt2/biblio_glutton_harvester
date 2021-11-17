@@ -50,8 +50,6 @@ def analyze_failure(map_jsonl, output):
                 nb_failed_entries += process_entry(line, distribution)
 
     # write csv file with the distribution
-    print(distribution)
-
     a = nb_failed_entries*100/count
     print("failure for", str(nb_failed_entries), "entries out of", str(count), "( %.2f" % a, "% )")
 

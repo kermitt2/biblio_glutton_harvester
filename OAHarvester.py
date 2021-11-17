@@ -185,7 +185,16 @@ class OAHarverster(object):
             if not 'best_oa_location' in entry and 'oa_locations' in entry and len(entry['oa_locations'])>0:
                 # this is a fallback in case we don't have the `best_oa_location` part (it should not happen
                 # with a normal Unpaywall dump)
-                entry['best_oa_location'] = entry['oa_locations'][0]
+
+                # the best oa_location identified with a "is_best" attribute
+                for oa_location in entry['oa_locations']:
+                    if oa_location['is_best']:
+                        entry['best_oa_location'] = oa_location
+                        break
+
+                # if still not best location, take the first one
+                if not 'best_oa_location' in entry:
+                    entry['best_oa_location'] = entry['oa_locations'][0]
 
             if 'best_oa_location' in entry:
                 if entry['best_oa_location'] is not None and 'url_for_pdf' in entry['best_oa_location']:
