@@ -19,3 +19,4 @@ OAHarvesterStreaming.py
 env/
 dump.json*
 map.json*
+failures.csv
