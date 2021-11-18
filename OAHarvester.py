@@ -119,6 +119,10 @@ class OAHarverster(object):
         entries = []
         filenames = []
         selection = None
+        total_pdf_url_found = 0
+        total_oa_location_found = 0
+        total_no_best_oa_location_found = 0
+        total_oa_location_found_but_empty_pdf_url = 0
 
         # check the overall number of entries based on the line number
         print("\ncalculating number of entries...")
@@ -182,35 +186,57 @@ class OAHarverster(object):
                 with self.env_doi.begin(write=True) as txn_doi:
                     txn_doi.put(entry['doi'].encode(encoding='UTF-8'), entry['id'].encode(encoding='UTF-8'))
 
-            if not 'best_oa_location' in entry and 'oa_locations' in entry and len(entry['oa_locations'])>0:
-                # this is a fallback in case we don't have the `best_oa_location` part (it should not happen
-                # with a normal Unpaywall dump)
+            if 'oa_locations' in entry and len(entry['oa_locations'])>0:
+                total_oa_location_found += 1
 
-                # the best oa_location identified with a "is_best" attribute
+            # if the best location is none, we discard it 
+            if 'best_oa_location' in entry and entry['best_oa_location'] == None:
+                del entry['best_oa_location']
+
+            # if the best location is not none but it has no usable 'url_for_pdf' field, we discard it 
+            if 'best_oa_location' in entry and entry['best_oa_location'] != None and not 'url_for_pdf' in entry['best_oa_location']:
+                del entry['best_oa_location']
+            if 'best_oa_location' in entry and entry['best_oa_location'] != None and 'url_for_pdf' in entry['best_oa_location'] and entry['best_oa_location']['url_for_pdf'] == None:
+                del entry['best_oa_location']
+
+            if (not 'best_oa_location' in entry and 'oa_locations' in entry and len(entry['oa_locations'])>0):
+
+                # the best oa_location identified with a "is_best" attribute, we need a valid link to a PDF too
                 for oa_location in entry['oa_locations']:
-                    if oa_location['is_best']:
+                    if oa_location['is_best'] and 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
                         entry['best_oa_location'] = oa_location
                         break
 
-                # if still not best location, take the first one
+                # if still no best location, take the first one with a valid link to a PDF
                 if not 'best_oa_location' in entry:
-                    entry['best_oa_location'] = entry['oa_locations'][0]
+                    for oa_location in entry['oa_locations']:
+                        if 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
+                            entry['best_oa_location'] = oa_location
+                            break
+
+            # TBD: consider alternative non-best PDF URL with better chance of download,
+            # e.g. PMC rather than publisher version 
+            
+            if 'oa_locations' in entry and len(entry['oa_locations'])>0:
+                if not 'best_oa_location' in entry:
+                    total_oa_location_found_but_empty_pdf_url += 1
 
             if 'best_oa_location' in entry:
                 if entry['best_oa_location'] is not None and 'url_for_pdf' in entry['best_oa_location']:
                     pdf_url = entry['best_oa_location']['url_for_pdf']
-                    if pdf_url is not None:    
-                        #print(pdf_url)
-                        urls.append(pdf_url)
-                        # TBD: consider alternative non-best PDF URL for fallback solution?
+                    if pdf_url is not None:
+                        total_pdf_url_found += 1
 
-                        #if not 'id' in entry:
-                        #    entry['id'] = str(uuid.uuid4())
+                        urls.append(pdf_url)
                         entries.append(entry)
+
                         filenames.append(os.path.join(self.config["data_path"], entry['id']+".pdf"))
                         i += 1
                         if "is_best" in entry['best_oa_location']:
                             del entry['best_oa_location']['is_best']
+            else:
+                total_no_best_oa_location_found += 1
+
             position += 1
             
         gz.close()
@@ -220,6 +246,10 @@ class OAHarverster(object):
             self.processBatch(urls, filenames, entries)
             n += len(urls)
 
+        print("total entries with non empty oa_location found:", total_oa_location_found)
+        print("total entries with no oa_location or no usable oa_location found:", total_no_best_oa_location_found)
+        print("total entries with oa_location but no usable pdf url found:", total_oa_location_found_but_empty_pdf_url)
+        print("total entries with usable pdf url found:", total_pdf_url_found)
         print("total processed entries:", n)
 
     def harvestPMC(self, filepath, reprocess=False):   

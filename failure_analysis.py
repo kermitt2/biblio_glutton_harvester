@@ -1,7 +1,7 @@
 '''
 
 A modest postprocessing script for analyzing the generated map.jsonl file and count 
-harvesting failure by domains. For every entries without pdf resource, we take the
+harvesting failures by domains. For every entry without pdf resource, we take the
 base url of the OA link and generate a distribution of the failures by domain
 in csv format. 
 
