@@ -60,6 +60,8 @@ A configuration file must be completed, by default the file `config.json` will b
 
 - `batch_size` gives the number of PDF that is considered for parallel process at the same time, the process will move to a new batch only when all the PDF of the previous batch will be processed.  
  
+- `"prioritize_pmc"` indicates if the harvester has to choose a PMC PDF (NIH PMC or Europe PMC) when available instead of a publisher PDF, this can improve the harvesting success rate and performance, but depending on the task the publisher PDF might be preferred.  
+
 - if a `biblio_glutton_base` URL service is provided, biblio-glutton will be used to enrich the metadata of every harvested articles. biblio-glutton provides aggregated metadata that extends CrossRef records with PubMed information and strong identifiers. 
 
 - if a DOI is not found by `biblio_glutton`, it is possible to call the CrossRef REST API as a fallback to retrieve the publisher metadata. This is useful when the biblio-glutton service presents a gap in coverage for recent DOI records. 
@@ -69,6 +71,7 @@ A configuration file must be completed, by default the file `config.json` will b
     "data_path": "./data",
     "compression": true,
     "batch_size": 100,
+    "prioritize_pmc": false,
     "pmc_base": "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/",
     "biblio_glutton_base": "", 
     "crossref_base": "https://api.crossref.org",
@@ -131,7 +134,7 @@ Note: for harvesting PMC files, although the ftp server is used, the downloads t
 
 Also note that: 
 
-* The PMC fulltext available at NIH are not always provided with a PDF. In these cases, only the NLM file will be harvested.
+* For PMC harvesting, the PMC fulltext available at NIH are not always provided with a PDF. In these cases, only the NLM file will be harvested.
 
 * PMC PDF files can also be harvested via Unpaywall, not using the NIH PMC services. The NLM files will then not be included, but the PDF coverage might be better than a direct harvesting at NIH.
 

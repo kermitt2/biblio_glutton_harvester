@@ -189,6 +189,14 @@ class OAHarverster(object):
             if 'oa_locations' in entry and len(entry['oa_locations'])>0:
                 total_oa_location_found += 1
 
+            # if requested, we always prioritize PMC pdf over publisher one for higher chance of successful download
+            if "prioritize_pmc" in self.config and self.config["prioritize_pmc"]:
+                for oa_location in entry['oa_locations']:
+                    if 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
+                        if oa_location['url_for_pdf'].find('europepmc.org/articles/pmc') != -1 or oa_location['url_for_pdf'].find('ncbi.nlm.nih.gov/pmc/articles') != -1:
+                            entry['best_oa_location'] = oa_location
+                            break
+
             # if the best location is none, we discard it 
             if 'best_oa_location' in entry and entry['best_oa_location'] == None:
                 del entry['best_oa_location']
