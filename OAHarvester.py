@@ -51,7 +51,7 @@ is processed and output stored in memory until all input is consumed), it works 
 indicated in the config.json file (default is 100 entries). We are moving from first batch to the second one 
 only when the first is entirely processed. The harvesting process is not CPU bounded so using threads is okay. 
 '''
-class OAHarverster(object):
+class OAHarvester(object):
 
     def __init__(self, config, thumbnail=False, sample=None):
         self.config = config
@@ -136,7 +136,7 @@ class OAHarverster(object):
 
         if self.sample is not None:
             # random selection corresponding to the requested sample size
-            selection = [randint(0, count-1) for p in range(0, sample)]
+            selection = [randint(0, count-1) for p in range(0, self.sample)]
             selection.sort()
 
         gz = gzip.open(filepath, 'rt')
@@ -295,12 +295,12 @@ class OAHarverster(object):
 
         if self.sample is not None:
             # random selection corresponding to the requested sample size
-            selection = [randint(0, count-1) for p in range(0, sample)]
+            selection = [randint(0, count-1) for p in range(0, self.sample)]
             selection.sort()
 
         with open(filepath, 'rt') as fp:  
             position = 0
-            for line in tqdm(gz, total=count):
+            for line in tqdm(fp, total=count):
                 if selection is not None and not position in selection:
                     position += 1
                     continue
