@@ -15,6 +15,8 @@ from concurrent.futures import ThreadPoolExecutor
 import tarfile
 from random import randint, choices
 from tqdm import tqdm
+import cloudscraper
+from bs4 import BeautifulSoup
 
 # logging
 import logging
@@ -40,6 +42,8 @@ logging.getLogger("swiftclient").setLevel(logging.ERROR)
 biblio_glutton_url = None
 crossref_base = None
 crossref_email = None
+
+#scraper = cloudscraper.create_scraper(interpreter='nodejs')
 
 '''
 Harvester for PDF available in open access. a LMDB index is used to keep track of the harvesting process and
@@ -393,7 +397,7 @@ class OAHarvester(object):
 
         print("total processed entries:", n)
 
-    def processBatch(self, urls, filenames, entries):#, txn, txn_doi, txn_fail):
+    def processBatch(self, urls, filenames, entries):
         with ThreadPoolExecutor(max_workers=12) as executor:
             results = executor.map(_download, urls, filenames, entries, timeout=30)
 
@@ -859,7 +863,7 @@ def _get_random_user_agent():
     Note: rotating the user agent without rotating the IP address (via proxies) might not be a good idea if the same server
     is harvested - but in our case we are harvesting a large variety of different Open Access servers
     '''
-    user_agents = ["Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:81.0) Gecko/20100101 Firefox/81.0",
+    user_agents = ["Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:95.0) Gecko/20100101 Firefox/95.0",
                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36",
                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36"]
     weights = [0.2, 0.3, 0.5]
@@ -906,7 +910,8 @@ def _download(url, filename, local_entry):
             if not "istexId" in local_entry and "istexId" in glutton_record:
                 local_entry["istexId"] = glutton_record["istexId"]    
 
-    result = _download_requests(url, filename)
+    #result = _download_requests(url, filename)
+    result = _download_cloudscraper(url, filename)
     if result != "success":
         result = _download_wget(url, filename)
 
@@ -914,6 +919,41 @@ def _download(url, filename, local_entry):
         _manage_pmc_archives(filename)
 
     return result, local_entry
+
+def _download_cloudscraper(url, filename, n=0, timeout_in_seconds=30):
+    """
+    Use a cloudscraper session for downloading Cloudflare protected file. 
+    Header agant generation is managed by cloudscraper.
+    Websites not using Cloudflare will be treated like normal requests call. 
+
+    See https://github.com/VeNoMouS/cloudscraper for more options (e.g. proxy, captcha solver)
+    """
+    #global scraper
+    result = "fail"
+    try:
+        scraper = cloudscraper.create_scraper(interpreter='nodejs')
+        file_data = scraper.get(url, timeout=timeout_in_seconds)
+        if file_data.status_code == 200:
+            if filename.endsWith(".pdf"):
+                if file_data.text[:5] == '%PDF-':
+                    with open(filename, 'wb') as f_out:
+                        f_out.write(file_data.content)
+                    result = "success"
+                elif n < 5:
+                    soup = BeautifulSoup(file_data.text, 'html.parser')
+                    if soup.select_one('a#redirect'):
+                        redirect_url = soup.select_one('a#redirect')['href']
+                        logging.debug('Waiting 5 seconds before following redirect url')
+                        sleep(5)
+                        logging.debug(f'Retry number {n + 1}')
+                        return _download_cloudscraper(redirect_url, filename, n=n+1, timeout_in_seconds=timeout_in_seconds)
+            else:
+                with open(filename, 'wb') as f_out:
+                    f_out.write(file_data.content)
+                    result = "success"
+    except Exception:
+        logging.exception("Download failed for {0} with cloudscraper".format(url))
+    return result
 
 def _download_wget(url, filename):
     """ 
@@ -1183,8 +1223,22 @@ def _load_config(path='./config.json'):
     config_json = open(path).read()
     return json.loads(config_json)
 
+def arxiv_url_to_path(url, ext='.pdf'):
+    """
+    In order to access to an arXiv PDF via a mirror path based on the requested arXiv PDF URL
+    See https://github.com/kermitt2/arxiv_harvester to create the mirror
+    """
+    try:
+        _id = re.findall(r"arxiv\.org/pdf/(.*)$", url)[0]
+        prefix = "arxiv" if _id[0].isdigit() else _id.split('/')[0]
+        filename = url.split('/')[-1]
+        yymm = filename[:4]
+        return '/'.join([prefix, yymm, filename, filename + ext])
+    except:
+        logging.exception("Incorrect arXiv url format, could not extract path")
+
 def test():
-    harvester = OAHarverster()
+    harvester = OAHarvester()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = "Open Access PDF harvester")
@@ -1218,7 +1272,7 @@ if __name__ == "__main__":
     if "crossref_email" in config and len(config["crossref_email"].strip())>0:
         crossref_email = config["crossref_email"]
 
-    harvester = OAHarverster(config=config, thumbnail=thumbnail, sample=sample)
+    harvester = OAHarvester(config=config, thumbnail=thumbnail, sample=sample)
 
     if reset:
         harvester.reset()
