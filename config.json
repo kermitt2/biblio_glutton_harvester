@@ -12,5 +12,8 @@
     "bucket_name": "",
     "region": "",
     "swift": {},
-    "swift_container": ""
+    "swift_container": "",
+    "arxiv_base": "",
+    "plos_base": "",
+    "elife_base": ""
 }

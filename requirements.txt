@@ -2,7 +2,7 @@ boto3
 lmdb==0.94
 python-magic==0.4.15
 requests
-tqdm==4.21
+tqdm==4.65.0
 python-swiftclient==3.12.0
 python-keystoneclient
 cloudscraper==1.2.60

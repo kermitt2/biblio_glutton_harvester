@@ -1,12 +1,12 @@
 # Open Access PDF harvester
 
-Python utility for harvesting efficiently a large Open Access collection of scholar PDF: 
+Python utility for harvesting efficiently a very large Open Access collection of scholar PDF: 
 
 * The downloaded PDF can be stored either on an Amazon S3 bucket, on a SWIFT object storage (OpenStack) or on a local storage, with UUID renaming/mapping. 
 
 * Downloads and storage uploads over HTTP(S) are multi-threaded for best robustness and efficiency. 
 
-* The download supports redirections, https protocol, wait/retries and uses rotating request headers. 
+* The download supports redirections, https protocol, wait/retries. It uses rotating request headers and supports Cloudflare protection via cloudscraper. 
 
 * The harvesting process can be interrupted and resumed.
 
@@ -18,7 +18,7 @@ Python utility for harvesting efficiently a large Open Access collection of scho
 
 * It is also possible to harvest only a random sample of PDF instead of complete sets. 
 
-The utility can be used in particular to harvest the **Unpaywall** dataset (PDF) and the **PMC** publications (PDF and corresponding NLM XML files).
+The utility can be used in particular to harvest the full **Unpaywall** dataset (PDF) and the full **PMC** publications (PDF and corresponding NLM XML files).
 
 ## Requirements
 
@@ -26,7 +26,7 @@ The utility requires Python 3.6 or more. It is developed for a deployment on a P
 
 The utility will use some local storage dedicated to the embedded databases keeping track of the advancement of the harvesting, metadata and temporary downloaded resources. Consider a few GB of free space for a large scale harvesting of TB of PDF. 
 
-Storage: as a rule of thumb, consider bewteen 1 and 1.5 TB for storage 1 million scholar PDF.
+__Storage__: as a rule of thumb, consider bewteen 1 and 1.5 TB for storage 1 million scholar PDF.
 
 ## Install
 
@@ -44,7 +44,7 @@ It is advised to setup first a virtual environment to avoid falling into one of 
 
 Install the dependencies, use:
 
-> pip3 install -r requirements.txt
+> python3 -m pip install -r requirements.txt
 
 For generating thumbnails corresponding to the harvested PDF, ImageMagick must be installed. For instance on Ubuntu:
 
@@ -66,6 +66,8 @@ A configuration file must be completed, by default the file `config.json` will b
 
 - if a DOI is not found by `biblio_glutton`, it is possible to call the CrossRef REST API as a fallback to retrieve the publisher metadata. This is useful when the biblio-glutton service presents a gap in coverage for recent DOI records. 
 
+- arXiv blocks machine-based harvesting of PDF, so it is necessary to create a local mirror of arXiv resources using dedicated data loader. If only PDF are required, see <https://github.com/kermitt2/arxiv_harvester> to create such mirror with PDF and metadata (a bit more than 2TB). For LaTeX sources, see [here](https://info.arxiv.org/help/bulk_data_s3.html#bulk-source-file-access) (around 3TB). The path to the arxiv resource mirror is set with the config parameter `arxiv_base`, an URI is expected and the path is resollved based on the arxiv ID as documented in the [arxiv_harvester](https://github.com/kermitt2/arxiv_harvester). 
+
 ```json
 {
     "data_path": "./data",
@@ -81,7 +83,10 @@ A configuration file must be completed, by default the file `config.json` will b
     "bucket_name": "",
     "region": "",
     "swift": {},
-    "swift_container": ""
+    "swift_container": "",
+    "arxiv_base": "",
+    "plos_base": "",
+    "elife_base": ""
 }
 ```
 

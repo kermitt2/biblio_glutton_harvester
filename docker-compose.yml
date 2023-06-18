@@ -1,9 +1,0 @@
-version: "3.8"
-services:
-  harvester:
-    build: .
-    image: harvester
-    volumes:
-      - ./data:/opt/data
-    stdin_open: true
-    tty: true

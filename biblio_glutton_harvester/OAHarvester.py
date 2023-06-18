@@ -11,6 +11,7 @@ import uuid
 import subprocess
 import argparse
 import time
+import yaml
 from concurrent.futures import ThreadPoolExecutor
 import tarfile
 from random import randint, choices
@@ -23,13 +24,13 @@ import logging
 import logging.handlers
 
 # support for S3
-import S3
+import biblio_glutton_harvester.S3 as S3
 
 # support for SWIFT object storage
-import swift
+import biblio_glutton_harvester.swift as swift
 
 # init LMDB
-map_size = 200 * 1024 * 1024 * 1024 
+map_size = 512 * 1024 * 1024 * 1024 
 logging.basicConfig(filename='harvester.log', filemode='w', level=logging.DEBUG)
 
 import urllib3
@@ -43,17 +44,11 @@ biblio_glutton_url = None
 crossref_base = None
 crossref_email = None
 
-#scraper = cloudscraper.create_scraper(interpreter='nodejs')
-
 '''
 Harvester for PDF available in open access. a LMDB index is used to keep track of the harvesting process and
-possible failures.  
+possible failures.
 
 This version uses the standard ThreadPoolExecutor for parallelizing the download/processing/upload processes. 
-Given the limits of ThreadPoolExecutor (input stored in memory, blocking Executor.map until the whole input
-is processed and output stored in memory until all input is consumed), it works with batches of PDF of a size 
-indicated in the config.json file (default is 100 entries). We are moving from first batch to the second one 
-only when the first is entirely processed. The harvesting process is not CPU bounded so using threads is okay. 
 '''
 class OAHarvester(object):
 
@@ -199,6 +194,20 @@ class OAHarvester(object):
                     if 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
                         if oa_location['url_for_pdf'].find('europepmc.org/articles/pmc') != -1 or oa_location['url_for_pdf'].find('ncbi.nlm.nih.gov/pmc/articles') != -1:
                             entry['best_oa_location'] = oa_location
+                            break
+
+            # if we have a mirror of arXiv, we prioritize arxiv resources for hugher chance of successful download
+            if "arxiv_base" in self.config and self.config["arxiv_base"] and len(self.config["arxiv_base"])>1:
+                for oa_location in entry['oa_locations']:
+                    if oa_location.find('arxiv.org') != -1:
+                        entry['best_oa_location'] = oa_location
+                            break
+
+            # if we have a PLOS resource, we use the PLOS PDF url, but also the PLOS mirror to get the JATS and TEI full text versions
+            if "plos_base" in self.config and self.config["plos_base"] and len(self.config["plos_base"])>1:
+                for oa_location in entry['oa_locations']:
+                    if oa_location['url_for_pdf'].find('plos.org') != -1:
+                        entry['best_oa_location'] = oa_location
                             break
 
             # if the best location is none, we discard it 
@@ -1236,6 +1245,19 @@ def arxiv_url_to_path(url, ext='.pdf'):
         return '/'.join([prefix, yymm, filename, filename + ext])
     except:
         logging.exception("Incorrect arXiv url format, could not extract path")
+
+def plos_url_to_path(url, ext='.xml'):
+    """
+    In order to access to PLOS JATS and TEI XML via a mirror path based on the requested PLOS PDF URL
+    To create the mirror, the bulk allOfPLOS archive with all JATS XML is available from PLOS 
+    https://allof.plos.org/allofplos.zip
+    or
+    https://github.com/PLOS/allofplos 
+    """
+    try:
+
+    except:
+        logging.exception("Incorrect PLOS PDF url format, could not extract path")
 
 def test():
     harvester = OAHarvester()

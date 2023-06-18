@@ -1,0 +1,38 @@
+data_path: "./data"
+compression: true
+batch_size: 100
+
+resources:
+    prioritize_pmc: true,
+    pmc_base": "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/",
+    arxiv_base: ~
+    plos_base: ~
+    elife_base: ~
+
+metadata:
+    biblio_glutton_base: ~ 
+    crossref_base: "https://api.crossref.org"
+    crossref_email: ~
+
+aws:
+    aws_access_key_id": ""
+    aws_secret_access_key": ""
+    bucket_name": ""
+    region": ""
+
+swift:
+    swift_container: ""
+    swift_parameters: 
+        auth_version: "3"
+        auth_url: ""
+        user: ""
+        os_username: ""
+        os_password: ""
+        key: ""
+        os_user_domain_name: "Default"
+        os_project_domain_name: "Default"
+        os_project_name: ""
+        os_project_id: ""
+        os_region_name: ""
+        os_auth_url: ""
+    
