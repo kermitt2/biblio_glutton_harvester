@@ -1,4 +1,4 @@
-boto3
+boto3==1.26.155
 lmdb==0.94
 python-magic==0.4.15
 requests

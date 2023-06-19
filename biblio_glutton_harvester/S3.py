@@ -4,11 +4,10 @@ from boto3 import client
 # logging
 import logging
 import logging.handlers
-logging.basicConfig(filename='harvester.log', filemode='w', level=logging.DEBUG)
+logging.basicConfig(filename='harvester.log', filemode='w', level=logging.ERROR)
 
 '''
-Note: at this stage, this is quick and dirty... 
-we should examine the response object and properly raise exceptions and manage retry
+Note: we probably should manage retry
 '''
 
 class S3(object):
@@ -20,7 +19,18 @@ class S3(object):
         else:
             region = "us-west-2"
         self.bucket_name = self.config['bucket_name']
-        self.conn = client('s3', 
+
+        if 'aws_end_point' in self.config and len(self.config['aws_end_point'])>1:
+            # for non-AWS S3 compatible storage, e.g. OVHCloud
+            end_point = self.config['aws_end_point']
+            self.conn = client('s3', 
+                            endpoint_url=end_point,
+                            region_name=region, 
+                            aws_access_key_id=self.config['aws_access_key_id'],
+                            aws_secret_access_key=self.config['aws_secret_access_key'])
+        else:
+            # default AWS
+            self.conn = client('s3', 
                             region_name=region, 
                             aws_access_key_id=self.config['aws_access_key_id'],
                             aws_secret_access_key=self.config['aws_secret_access_key'])

@@ -134,7 +134,7 @@ class OAHarvester(object):
                 buffer = gz.read(8192*1024)
                 if not buffer: break
                 count += buffer.count(b'\n')
-        print("total entries found: " + str(count))
+        print("number of articles to harvest:", str(count),"\n")
 
         if self.sample is not None:
             # random selection corresponding to the requested sample size
@@ -146,6 +146,9 @@ class OAHarvester(object):
         for line in tqdm(gz, total=count):
             if selection is not None and not position in selection:
                 position += 1
+                continue
+
+            if len(line.strip()) == 0:
                 continue
 
             if i == batch_size_pdf:
@@ -897,6 +900,24 @@ def _download(url, filename, local_entry, config= None):
     global crossref_base
     global crossref_email
 
+    # check mirror resources
+    if config != None and "arxiv_base" in config and len(config["arxiv_base"]) > 1 and url.find("arxiv.org") != -1:
+        # use arxiv mirror for getting the PDF, arXiv metadata (they will be added to the local_entry dict
+        # and latex sources if available)
+
+
+        break
+
+    if config != None and "plos_base" in config and len(config["plos_base"]) > 1 and url.find("plos.org") != -1:
+        # add extra PLOS resources: JATS XML fulltext and possible extra annotations
+        
+
+
+
+
+
+
+
     if biblio_glutton_url != None:
         local_doi = None
         if "doi" in local_entry:
@@ -923,17 +944,6 @@ def _download(url, filename, local_entry, config= None):
                 local_entry["pmcid"] = glutton_record["pmcid"]    
             if not "istexId" in local_entry and "istexId" in glutton_record:
                 local_entry["istexId"] = glutton_record["istexId"]
-
-    # check mirror resources
-    if config != None and "arxiv_base" in config and len(config["arxiv_base"]) > 1 and url.find("arxiv.org") != -1:
-        # use arxiv mirror
-
-
-        break
-
-    if config != None and "plos_base" in config and len(config["plos_base"]) > 1 and url.find("plos.org") != -1:
-        # add PLOS resources
-
 
     result = _download_cloudscraper(url, filename)
     if result != SUCCESS_DOWNLOAD:        
