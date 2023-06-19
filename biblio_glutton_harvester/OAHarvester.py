@@ -44,6 +44,9 @@ biblio_glutton_url = None
 crossref_base = None
 crossref_email = None
 
+SUCCESS_DOWNLOAD = 'success'
+FAIL_DOWNLOAD = 'fail'
+
 '''
 Harvester for PDF available in open access. a LMDB index is used to keep track of the harvesting process and
 possible failures.
@@ -229,15 +232,17 @@ class OAHarvester(object):
                         break
 
                 # if still no best location, take the first one with a valid link to a PDF
-                if not 'best_oa_location' in entry:
-                    for oa_location in entry['oa_locations']:
-                        if 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
+                #if not 'best_oa_location' in entry:
+                for oa_location in entry['oa_locations']:
+                    if 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
+                        if not 'best_oa_location' in entry:
                             entry['best_oa_location'] = oa_location
-                            break
+                        elif entry['best_oa_location'] != oa_location:
+                            #consider alternative non-best PDF URL with better chance of download,
+                            if not 'alternative_oa_locations' in entry:
+                                entry['alternative_oa_locations'] = []
+                            entry['alternative_oa_locations'].append(oa_location)                            
 
-            # TBD: consider alternative non-best PDF URL with better chance of download,
-            # e.g. PMC rather than publisher version 
-            
             if 'oa_locations' in entry and len(entry['oa_locations'])>0:
                 if not 'best_oa_location' in entry:
                     total_oa_location_found_but_empty_pdf_url += 1
@@ -431,7 +436,7 @@ class OAHarvester(object):
                     valid_file = True
                     local_entry["valid_fulltext_xml"] = True
 
-            if (result[0] is None or result[0] == "0" or result[0] == "success") and valid_file:
+            if (result[0] is None or result[0] == "0" or result[0] == SUCCESS_DOWNLOAD) and valid_file:
                 #update DB
                 with self.env.begin(write=True) as txn:
                     txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(_create_map_entry(local_entry))) 
@@ -649,7 +654,7 @@ class OAHarvester(object):
             try:
                 file_out_fail = open(fail_file,'w')
             except:
-                logging.exception("Could not open dump file for havesting fail failure report")
+                logging.exception("Could not open dump file for havesting failure report")
 
         with open(dump_file,'w') as file_out:
             # iterate over lmdb
@@ -886,7 +891,7 @@ def _serialize_pickle(a):
 def _deserialize_pickle(serialized):
     return pickle.loads(serialized)
 
-def _download(url, filename, local_entry):
+def _download(url, filename, local_entry, config= None):
     # optional biblio-glutton look-up
     global biblio_glutton_url
     global crossref_base
@@ -917,12 +922,44 @@ def _download(url, filename, local_entry):
             if not "pmcid" in local_entry and "pmcid" in glutton_record:
                 local_entry["pmcid"] = glutton_record["pmcid"]    
             if not "istexId" in local_entry and "istexId" in glutton_record:
-                local_entry["istexId"] = glutton_record["istexId"]    
+                local_entry["istexId"] = glutton_record["istexId"]
 
-    #result = _download_requests(url, filename)
+    # check mirror resources
+    if config != None and "arxiv_base" in config and len(config["arxiv_base"]) > 1 and url.find("arxiv.org") != -1:
+        # use arxiv mirror
+
+
+        break
+
+    if config != None and "plos_base" in config and len(config["plos_base"]) > 1 and url.find("plos.org") != -1:
+        # add PLOS resources
+
+
     result = _download_cloudscraper(url, filename)
-    if result != "success":
+    if result != SUCCESS_DOWNLOAD:        
+        if str(url).startswith("ftp"):
+            result = _download_ftp(url, filename)
+        else:
+            result = _download_requests(url, filename)
+
+    if result != SUCCESS_DOWNLOAD:
         result = _download_wget(url, filename)
+
+    if result != SUCCESS_DOWNLOAD:
+        # look for alternative url if present in the entry
+        if "alternative_oa_locations" in local_entry:
+            for alternative_oa_location in local_entry['alternative_oa_locations']:
+                result = _download_cloudscraper(alternative_oa_location, filename)
+                if result != SUCCESS_DOWNLOAD:
+                    if str(url).startswith("ftp"):
+                        result = _download_ftp(url, filename)
+                    else:
+                        result = _download_requests(url, filename)
+                if result != SUCCESS_DOWNLOAD:
+                    result = _download_wget(alternative_oa_location, filename)
+                if result == SUCCESS_DOWNLOAD:
+                    local_entry['best_oa_location'] = alternative_oa_location
+                    break
 
     if os.path.isfile(filename) and filename.endswith(".tar.gz"):
         _manage_pmc_archives(filename)
@@ -938,16 +975,16 @@ def _download_cloudscraper(url, filename, n=0, timeout_in_seconds=30):
     See https://github.com/VeNoMouS/cloudscraper for more options (e.g. proxy, captcha solver)
     """
     #global scraper
-    result = "fail"
+    result = FAIL_DOWNLOAD
     try:
         scraper = cloudscraper.create_scraper(interpreter='nodejs')
         file_data = scraper.get(url, timeout=timeout_in_seconds)
         if file_data.status_code == 200:
-            if filename.endsWith(".pdf"):
+            if filename.endswith(".pdf"):
                 if file_data.text[:5] == '%PDF-':
                     with open(filename, 'wb') as f_out:
                         f_out.write(file_data.content)
-                    result = "success"
+                    result = SUCCESS_DOWNLOAD
                 elif n < 5:
                     soup = BeautifulSoup(file_data.text, 'html.parser')
                     if soup.select_one('a#redirect'):
@@ -959,7 +996,7 @@ def _download_cloudscraper(url, filename, n=0, timeout_in_seconds=30):
             else:
                 with open(filename, 'wb') as f_out:
                     f_out.write(file_data.content)
-                    result = "success"
+                    result = SUCCESS_DOWNLOAD
     except Exception:
         logging.exception("Download failed for {0} with cloudscraper".format(url))
     return result
@@ -972,7 +1009,7 @@ def _download_wget(url, filename):
     (https://unix.stackexchange.com/a/464375) and experimental. So in the following, we keep compression disable and we
     manage the decompression in a second step after checking the mime type of the downloaded file.
     """
-    result = "fail"
+    result = FAIL_DOWNLOAD
     # This is the most robust and reliable way to download files I found with Python... to rely on system wget :)
     #cmd = "wget -c --quiet" + " -O " + filename + ' --connect-timeout=10 --waitretry=10 ' + \
     cmd = "wget -c --quiet" + " -O " + filename + ' --timeout=15 --waitretry=0 --tries=5 --retry-connrefused ' + \
@@ -994,7 +1031,7 @@ def _download_wget(url, filename):
                     os.remove(filename)
                 except OSError:
                     logging.exception("Deletion of invalid compressed file failed")
-                    result = "fail"
+                    result = FAIL_DOWNLOAD
             # ensure cleaning
             if os.path.isfile(filename+'.decompressed'):
                 try:
@@ -1002,16 +1039,15 @@ def _download_wget(url, filename):
                 except OSError:  
                     logging.exception("Final deletion of temp decompressed file failed")
         else:
-            result = "success"
+            result = SUCCESS_DOWNLOAD
 
     except subprocess.CalledProcessError as e:  
         logging.exception("error subprocess wget") 
-        #logging.error("wget command was: " + cmd)
-        result = "fail"
+        result = FAIL_DOWNLOAD
 
     except Exception as e:
         logging.exception("Unexpected error wget process") 
-        result = "fail"
+        result = FAIL_DOWNLOAD
 
     return str(result)
 
@@ -1020,15 +1056,29 @@ def _download_requests(url, filename):
     Download with Python requests which handle well compression, but not very robust and bad parallelization
     """
     HEADERS = {"""User-Agent""": _get_random_user_agent()}
-    result = "fail" 
+    result = FAIL_DOWNLOAD
     try:
         file_data = requests.get(url, allow_redirects=True, headers=HEADERS, verify=False, timeout=30)
         if file_data.status_code == 200:
             with open(filename, 'wb') as f_out:
                 f_out.write(file_data.content)
-            result = "success"
+            result = SUCCESS_DOWNLOAD
     except Exception:
         logging.exception("Download failed for {0} with requests".format(url))
+    return result
+
+def _download_ftp(url, filename):
+    """
+    https://stackoverflow.com/questions/11768214/python-download-a-file-from-an-ftp-server
+    """
+    result = FAIL_DOWNLOAD
+    try:
+        with closing(request.urlopen(url)) as r:
+            with open(filename, 'wb') as f:
+                shutil.copyfileobj(r, f)
+                result = SUCCESS_DOWNLOAD
+    except Exception as e:
+        logging.exception("Download failed for {0} with ftp adapter".format(url))
     return result
 
 def _check_compression(file):

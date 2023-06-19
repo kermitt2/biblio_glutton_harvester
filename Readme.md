@@ -1,3 +1,6 @@
+[![PyPI version](https://badge.fury.io/py/biblio_glutton_harvester.svg)](https://badge.fury.io/py/biblio_glutton_harvester)
+[![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
+
 # Open Access PDF harvester
 
 Python utility for harvesting efficiently a very large Open Access collection of scholar PDF: 
@@ -49,6 +52,14 @@ Install the dependencies, use:
 For generating thumbnails corresponding to the harvested PDF, ImageMagick must be installed. For instance on Ubuntu:
 
 > apt-get install imagemagick
+
+### Using PyPI package
+
+PyPI packages are available for stable versions. Latest stable version is `0.2.0`:
+
+```
+python3 -m pip install biblio-glutton-harvester==0.2.0
+```
 
 ## Configuration
 
