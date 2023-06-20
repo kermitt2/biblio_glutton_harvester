@@ -45,9 +45,9 @@ class Swift(object):
 
     def _init_swift_options(self):
         options = {}
-        for key in self.config["swift"]:
-            if len(self.config["swift"][key].strip())>0:
-                options[key] = self.config["swift"][key]
+        for key in self.config["swift_parameters"]:
+            if len(self.config["swift_parameters"][key].strip())>0:
+                options[key] = self.config["swift_parameters"][key]
         return options
 
     def upload_file_to_swift(self, file_path, dest_path=None):

@@ -3,7 +3,7 @@
 
 # Open Access PDF harvester
 
-Python utility for harvesting efficiently a very large Open Access collection of scholar PDF: 
+Python utility for harvesting efficiently a very large Open Access collection of scholar PDF and metadata: 
 
 * The downloaded PDF can be stored either on an Amazon S3 bucket, on a SWIFT object storage (OpenStack) or on a local storage, with UUID renaming/mapping. 
 
@@ -17,11 +17,13 @@ Python utility for harvesting efficiently a very large Open Access collection of
 
 * Optionally, aggregated metadata from biblio-glutton for an article are accessed and stored together with the full text resources. 
 
+* Mirrors of pre-downloaded/dump resources can be used as the harvesting is performed for higher download rate for arXiv and PLOS resources.
+
 * As a bonus, image thumbnails of the front page of the PDF are created and stored with the PDF.
 
 * It is also possible to harvest only a random sample of PDF instead of complete sets. 
 
-The utility can be used in particular to harvest the full **Unpaywall** dataset (PDF) and the full **PMC** publications (PDF and corresponding NLM XML files).
+The utility can be used in particular to harvest the full **Unpaywall** dataset (PDF) and the full **PMC** publications (PDF and corresponding NLM XML files). The tool is designed to scale to several ten million of full text and metadata downloads.
 
 ## Requirements
 
@@ -29,136 +31,90 @@ The utility requires Python 3.6 or more. It is developed for a deployment on a P
 
 The utility will use some local storage dedicated to the embedded databases keeping track of the advancement of the harvesting, metadata and temporary downloaded resources. Consider a few GB of free space for a large scale harvesting of TB of PDF. 
 
-__Storage__: as a rule of thumb, consider bewteen 1 and 1.5 TB for storage 1 million scholar PDF.
+__Storage__: as a rule of thumb, consider bewteen 1 and 1.5 TB for storage 1 million scholar PDF. As of May 2023, the full Unpaywall collection takes around 50TB. 
 
 ## Install
 
 Get the github repo:
 
-> git clone https://github.com/kermitt2/biblio-glutton-harvester
-
-> cd biblio-glutton-harvester
+```console
+git clone https://github.com/kermitt2/biblio_glutton_harvester
+cd biblio_glutton_harvester
+```
 
 It is advised to setup first a virtual environment to avoid falling into one of these gloomy python dependency marshlands:
 
-> virtualenv --system-site-packages -p python3 env
+```console
+virtualenv --system-site-packages -p python3 env
+source env/bin/activate
+```
 
-> source env/bin/activate
+Install the dependencies and the project:
 
-Install the dependencies, use:
-
-> python3 -m pip install -r requirements.txt
+```console
+python3 -m pip install -r requirements.txt
+python3 -m pip install -e .
+```
 
 For generating thumbnails corresponding to the harvested PDF, ImageMagick must be installed. For instance on Ubuntu:
 
-> apt-get install imagemagick
+```console
+apt-get install imagemagick
+```
 
 ### Using PyPI package
 
 PyPI packages are available for stable versions. Latest stable version is `0.2.0`:
 
 ```
-python3 -m pip install biblio-glutton-harvester==0.2.0
+python3 -m pip install biblio_glutton_harvester==0.2.0
 ```
 
 ## Configuration
 
-A configuration file must be completed, by default the file `config.json` will be used, but it is also possible to use it as a template and specifies a particular configuration file when using the tool (via the `--config` parameter). 
+A configuration file must be completed, by default the file `config.yaml` will be used, but it is also possible to use it as a template and specifies a particular configuration file when using the tool (via the `--config` parameter). 
 
 - `data_path` is the path where temporary files, metadata and local DB are stored to manage the harvesting. If no cloud storage configuration is indicated, it is also where the harvested resources will be stored.  
 
 - `compression` indicates if the resource files need to be compressed with `gzip` or not. Default is true, which means that all the harvested files will have an additional extension `.gz`. 
 
-- `batch_size` gives the number of PDF that is considered for parallel process at the same time, the process will move to a new batch only when all the PDF of the previous batch will be processed.  
+- `batch_size` gives the maximum number of parallel tasks (download, storage, compression, validation, ...) performed at the same time, the process will move to a new batch only when all the PDF and metadata of the previous batch have been harvested and valiadated.  
  
-- `"prioritize_pmc"` indicates if the harvester has to choose a PMC PDF (NIH PMC or Europe PMC) when available instead of a publisher PDF, this can improve the harvesting success rate and performance, but depending on the task the publisher PDF might be preferred.  
+The `resources` part of the configuration indicates how to access PubMed Central (PMC), arXiv and PLOS resources. 
 
-- if a `biblio_glutton_base` URL service is provided, biblio-glutton will be used to enrich the metadata of every harvested articles. biblio-glutton provides aggregated metadata that extends CrossRef records with PubMed information and strong identifiers. 
+- For PMC, `prioritize_pmc` indicates if the harvester has to choose a PMC PDF (NIH PMC or Europe PMC) when available instead of a publisher PDF, this can improve the harvesting success rate and performance, but depending on the task the publisher PDF might be preferred. The `pmc_base` is normally the NIH FTP address where to find the PDF and full text JATS. 
+
+- For arXiv, we indicate a possible mirror on a S3 compatible storage, as created with [arxiv_harvester](https://github.com/kermitt2/arxiv_harvester) (a bit more than 2TB for PDf and metadata only, 3TB more with LaTeX sources). Note that the path to individual resources is resolved based on the arxiv ID as documented in [arxiv_harvester](https://github.com/kermitt2/arxiv_harvester). 
+
+- For PLOS, if the "All Of PLOS" collection have been downloaded (around 330K JATS files), we indicate a possible mirror on a S3 compatible storage (see the zpped dump at <https://plos.org/text-and-data-mining/> or <https://github.com/PLOS/allofplos>)
+
+In `metadata` part of the configuration:
+
+- if a `biblio_glutton_base` URL service is provided, biblio-glutton will be used to enrich the metadata of every harvested articles. [biblio-glutton](https://github.com/kermitt2/biblio-glutton) provides aggregated metadata that extends CrossRef records with PubMed information and strong identifiers. 
 
 - if a DOI is not found by `biblio_glutton`, it is possible to call the CrossRef REST API as a fallback to retrieve the publisher metadata. This is useful when the biblio-glutton service presents a gap in coverage for recent DOI records. 
 
-- arXiv blocks machine-based harvesting of PDF, so it is necessary to create a local mirror of arXiv resources using dedicated data loader. If only PDF are required, see <https://github.com/kermitt2/arxiv_harvester> to create such mirror with PDF and metadata (a bit more than 2TB). For LaTeX sources, see [here](https://info.arxiv.org/help/bulk_data_s3.html#bulk-source-file-access) (around 3TB). The path to the arxiv resource mirror is set with the config parameter `arxiv_base`, an URI is expected and the path is resollved based on the arxiv ID as documented in the [arxiv_harvester](https://github.com/kermitt2/arxiv_harvester). 
+The configuration for a compatible S3 storage uses the `aws` section of the configuration. If Amazon AWS S3 service is used, leave the `aws_end_point` empty. If you are using an alternative compatible S3 service, you must indicate the end point in the `aws_end_point` parameter. If you are not using a S3 storage, remove the related related or leave these values empty.
 
-```json
-{
-    "data_path": "./data",
-    "compression": true,
-    "batch_size": 100,
-    "prioritize_pmc": false,
-    "pmc_base": "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/",
-    "biblio_glutton_base": "", 
-    "crossref_base": "https://api.crossref.org",
-    "crossref_email": "",
-    "aws_access_key_id": "",
-    "aws_secret_access_key": "",
-    "bucket_name": "",
-    "region": "",
-    "swift": {},
-    "swift_container": "",
-    "arxiv_base": "",
-    "plos_base": "",
-    "elife_base": ""
-}
-```
-
-Configuration for a S3 storage uses the following parameters:
-
-```json
-{
-    "aws_access_key_id": "",
-    "aws_secret_access_key": "",
-    "bucket_name": "",
-    "region": ""
-}
-```
-
-If you are not using a S3 storage, remove these keys or leave these values empty.
 Important: It is assumed that the complete S3 bucket is dedicated to the harvesting. The `--reset` parameter will clear all the objects stored in the bucket, so be careful. 
 
-The configuration for a SWIFT object storage uses the following parameters:
+The configuration for an OpenStack SWIFT object storage uses `swift` section of the configuration. If you are not using a SWIFT storage, remove the related parameters or leave these values empty. Important: It is assumed that the complete SWIFT container is dedicated to the harvesting. The `--reset` parameter will clear all the objects stored in the container, so be careful. 
 
-```json
-{
-    "swift": {},
-    "swift_container": ""
-}
-```
+The `"swift"` key will contain the account and authentication information, typically via Keystone. 
 
-If you are not using a SWIFT storage, remove these keys or leave these above values empty. Important: It is assumed that the complete SWIFT container is dedicated to the harvesting. The `--reset` parameter will clear all the objects stored in the container, so be careful. 
-
-The `"swift"` key will contain the account and authentication information, typically via Keystone, something like this: 
-
-```json
-{
-    "swift": {
-        "auth_version": "3",
-        "auth_url": "https://auth......./v3",
-        "os_username": "user-007",
-        "os_password": "1234",
-        "os_user_domain_name": "Default",
-        "os_project_domain_name": "Default",
-        "os_project_name": "myProjectName",
-        "os_project_id": "myProjectID",
-        "os_region_name": "NorthPole",
-        "os_auth_url": "https://auth......./v3"
-    },
-    "swift_container": "my_glutton_oa_harvesting"
-}
-```
-
-Note: for harvesting PMC files, although the ftp server is used, the downloads tend to fail as the parallel requests increase. It might be useful to lower the default, and to launch `reprocess` for completing the harvesting. For the unpaywall dataset, we have good results with high `batch_size` (like 200), probably because the distribution of the URL implies that requests are never concentrated on one OA server. 
+Note: for harvesting PMC files, although the ftp server is used, the downloads tend to fail as the parallel requests increase. It might be useful to lower the default, and to launch `reprocess` for completing the harvesting. For the unpaywall dataset, we have good results with high `batch_size` (like 200), probably because the distribution of the URL implies that requests are never concentrated on one OA server. However, `batch_size` at 100 is more conservative in general and should give higher download rate, and if only PMC files are downloaded `batch_size` at 20 is recommended. 
 
 Also note that: 
 
 * For PMC harvesting, the PMC fulltext available at NIH are not always provided with a PDF. In these cases, only the NLM file will be harvested.
 
-* PMC PDF files can also be harvested via Unpaywall, not using the NIH PMC services. The NLM files will then not be included, but the PDF coverage might be better than a direct harvesting at NIH.
+* PMC PDF files can also be harvested via Unpaywall, not using the NIH PMC services. The NLM files will then not be included, but the PDF coverage might be better than a direct harvesting at NIH only.
 
 ## Usage and options
 
 
 ```
-usage: python3 OAHarvester.py [-h] [--unpaywall UNPAYWALL] [--pmc PMC] [--config CONFIG] [--dump DUMP]
+usage: python3 -m biblio_glutton_harvester.OAHarvester [-h] [--unpaywall UNPAYWALL] [--pmc PMC] [--config CONFIG] [--dump DUMP]
                       [--reprocess] [--reset] [--thumbnail] [--sample SAMPLE]
 
 Open Access PDF harvester
@@ -168,7 +124,7 @@ optional arguments:
   --unpaywall UNPAYWALL
                         path to the Unpaywall dataset (gzipped)
   --pmc PMC             path to the pmc file list, as available on NIH's site
-  --config CONFIG       path to the config file, default is ./config.json
+  --config CONFIG       path to the config file, default is ./config.yaml
   --dump DUMP           write a map with UUID, article main identifiers and available harvested
                         resources
   --reprocess           reprocessed failed entries with OA link
@@ -186,47 +142,46 @@ The [Unpaywall database snapshot](https://unpaywall.org) is available from [OurR
 - non commercial-use OA files: ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_non_comm_use_pdf.txt
 - commercial-use OA files (CC0 and CC-BY): ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_comm_use_file_list.txt
 
-
 For processing all entries of an Unpaywall snapshot:
 
 ```bash
-> python3 OAHarvester.py --unpaywall /mnt/data/biblio/unpaywall_snapshot_2018-06-21T164548_with_versions.jsonl.gz
+> python3 -m biblio_glutton_harvester.OAHarvester --unpaywall /mnt/data/biblio/unpaywall_snapshot_2018-06-21T164548_with_versions.jsonl.gz
 ```
 
 By default, no thumbnail images are generated. For generating thumbnail images from the front page of the downloaded PDF (small, medium, large):
 
 ```bash
-> python3 OAHarvester.py --thumbnail --unpaywall /mnt/data/biblio/unpaywall_snapshot_2018-06-21T164548_with_versions.jsonl.gz 
+> python3 -m biblio_glutton_harvester.OAHarvester --thumbnail --unpaywall /mnt/data/biblio/unpaywall_snapshot_2018-06-21T164548_with_versions.jsonl.gz 
 ```
 
 By default, `./config.json` is used, but you can pass a specific config with the `--config` option:
 
 ```bash
-> python3 OAHarvester.py --config ./my_config.json --unpaywall /mnt/data/biblio/unpaywall_snapshot_2018-06-21T164548_with_versions.jsonl.gz
+> python3 -m biblio_glutton_harvester.OAHarvester --config ./my_config.json --unpaywall /mnt/data/biblio/unpaywall_snapshot_2018-06-21T164548_with_versions.jsonl.gz
 ```
 
 If the process is interrupted, relaunching the above command will resume the process at the interruption point. For re-starting the process from the beginning, and removing existing local information about the state of process, use the parameter `--reset`:
 
 ```bash
-> python3 OAHarvester.py --reset --unpaywall /mnt/data/biblio/unpaywall_snapshot_2018-06-21T164548_with_versions.jsonl.gz
+> python3 -m biblio_glutton_harvester.OAHarvester --reset --unpaywall /mnt/data/biblio/unpaywall_snapshot_2018-06-21T164548_with_versions.jsonl.gz
 ```
 
 After the completion of the snapshot, we can retry the PDF harvesting for the failed entries with the parameter `--reprocess`:
 
 ```bash
-> python3 OAHarvester.py --reprocess --unpaywall /mnt/data/biblio/unpaywall_snapshot_2018-06-21T164548_with_versions.jsonl.gz
+> python3 -m biblio_glutton_harvester.OAHarvester --reprocess --unpaywall /mnt/data/biblio/unpaywall_snapshot_2018-06-21T164548_with_versions.jsonl.gz
 ```
 
 For downloading the PDF from the PMC set, simply use the `--pmc` parameter instead of `--unpaywall`:
 
 ```bash
-> python3 OAHarvester.py --pmc /mnt/data/biblio/oa_file_list.txt
+> python3 -m biblio_glutton_harvester.OAHarvester --pmc /mnt/data/biblio/oa_file_list.txt
 ```
 
 For harvesting only a predifined random number of entries and not the whole sets, the parameter `--sample` can be used with the desired number:
 
 ```bash
-> python3 OAHarvester.py --pmc /mnt/data/biblio/oa_file_list.txt --sample 2000
+> python3 -m biblio_glutton_harvester.OAHarvester --pmc /mnt/data/biblio/oa_file_list.txt --sample 2000
 ```
 
 This command will harvest 2000 PDF randomly distributed in the complete PMC set. For the Unpaywall set, as around 20% of the entries only have an Open Access PDF, you will need to multiply by 5 the sample number, e.g. if you wish 2000 PDF, indicate `--sample 10000`. 
@@ -236,7 +191,7 @@ This command will harvest 2000 PDF randomly distributed in the complete PMC set.
 A mapping with the UUID associated with an Open Access full text resource and the main identifiers of the entries can be dumped in JSONL (default file name is `map.jsonl`) with the following command:
 
 ```bash
-> python3 OAHarvester.py --dump output.jsonl
+> python3 -m biblio_glutton_harvester.OAHarvester --dump output.jsonl
 ```
 
 By default, this map is always generated at the completion of an harvesting or re-harvesting. This mapping is necessary for further usage and for accessing resources associated to an entry (listing million files directly with AWS S3 is by far too slow, we thus need a local index/catalog).

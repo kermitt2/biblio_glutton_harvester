@@ -30,7 +30,7 @@ import biblio_glutton_harvester.S3 as S3
 import biblio_glutton_harvester.swift as swift
 
 # init LMDB
-map_size = 512 * 1024 * 1024 * 1024 
+map_size = 1024 * 1024 * 1024 * 1024 
 logging.basicConfig(filename='harvester.log', filemode='w', level=logging.DEBUG)
 
 import urllib3
@@ -75,12 +75,12 @@ class OAHarvester(object):
         self.sample = sample
 
         self.s3 = None
-        if "bucket_name" in self.config and len(self.config["bucket_name"].strip()) > 0:
-            self.s3 = S3.S3(self.config)
+        if "aws" in self.config and "bucket_name" in self.config["aws"] and self.config["aws"]["bucket_name"] and len(self.config["aws"]["bucket_name"].strip()) > 0:
+            self.s3 = S3.S3(self.config["aws"])
 
         self.swift = None
-        if "swift" in self.config and len(self.config["swift"])>0 and "swift_container" in self.config and len(self.config["swift_container"])>0:
-            self.swift = swift.Swift(self.config)
+        if "swift" in self.config and self.config["swift"] and len(self.config["swift"])>0 and "swift_container" in self.config["swift"] and self.config["swift"]["swift_container"] and len(self.config["swift"]["swift_container"])>0:
+            self.swift = swift.Swift(self.config["swift"])
 
     def _init_lmdb(self):
         # create the data path if it does not exist 
@@ -195,7 +195,7 @@ class OAHarvester(object):
                 total_oa_location_found += 1
 
             # if requested, we always prioritize PMC pdf over publisher one for higher chance of successful download
-            if "prioritize_pmc" in self.config and self.config["prioritize_pmc"]:
+            if "pmc" in self.config["resources"] and self.config["resources"]["pmc"] and "prioritize_pmc" in self.config["resources"]["pmc"] and self.config["resources"]["pmc"]["prioritize_pmc"]:
                 for oa_location in entry['oa_locations']:
                     if 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
                         if oa_location['url_for_pdf'].find('europepmc.org/articles/pmc') != -1 or oa_location['url_for_pdf'].find('ncbi.nlm.nih.gov/pmc/articles') != -1:
@@ -203,18 +203,18 @@ class OAHarvester(object):
                             break
 
             # if we have a mirror of arXiv, we prioritize arxiv resources for hugher chance of successful download
-            if "arxiv_base" in self.config and self.config["arxiv_base"] and len(self.config["arxiv_base"])>1:
+            if "arxiv" in self.config["resources"] and "arxiv_bucket_name" in self.config["resources"]["arxiv"] and self.config["resources"]["arxiv"]["arxiv_bucket_name"] and len(self.config["resources"]["arxiv"]["arxiv_bucket_name"])>1:
                 for oa_location in entry['oa_locations']:
                     if oa_location.find('arxiv.org') != -1:
                         entry['best_oa_location'] = oa_location
-                            break
+                        break
 
             # if we have a PLOS resource, we use the PLOS PDF url, but also the PLOS mirror to get the JATS and TEI full text versions
-            if "plos_base" in self.config and self.config["plos_base"] and len(self.config["plos_base"])>1:
+            if "plos" in self.config["resources"] and "plos_bucket_name" in self.config["resources"]["plos"] and self.config["resources"]["plos"]["plos_bucket_name"] and len(self.config["resources"]["plos"]["plos_bucket_name"])>1:
                 for oa_location in entry['oa_locations']:
                     if oa_location['url_for_pdf'].find('plos.org') != -1:
                         entry['best_oa_location'] = oa_location
-                            break
+                        break
 
             # if the best location is none, we discard it 
             if 'best_oa_location' in entry and entry['best_oa_location'] == None:
@@ -292,7 +292,11 @@ class OAHarvester(object):
         else:
             batch_size_pdf = 100
 
-        pmc_base = self.config['pmc_base']
+        if not "pmc" in self.config["resources"] or "pmc_base" not in self.config["resources"]["pmc"]:
+            print("Cannot find a PMC base for harvesting PMC full texts, check the config.yaml file")
+            return
+        pmc_base = self.config["resources"]["pmc"]["pmc_base"]
+
         # batch size for lmdb commit
         batch_size_lmdb = 10 
         n = 0
@@ -894,29 +898,87 @@ def _serialize_pickle(a):
 def _deserialize_pickle(serialized):
     return pickle.loads(serialized)
 
-def _download(url, filename, local_entry, config= None):
+def _download_arxiv(url, filename, local_entry, config= None):
+    result = FAIL_DOWNLOAD
+    
+    # PDF
+    arxiv_url_pdf = arxiv_url_to_path(url, ext='.pdf.gz')
+    print(arxiv_url_pdf)
+    result = _download_requests(arxiv_url_pdf, filename)
+    
+    # arXiv metadata
+    arxiv_url_json = arxiv_url_to_path(url, ext='.json.gz')
+    print(arxiv_url_json)
+    result = _download_requests(arxiv_url_json, filename)
+    # load downloaded arxiv_record json
+
+    '''
+    if result == SUCCESS_DOWNLOAD:
+        arxiv_record = 
+        if arxiv_record != None:
+            local_entry["arxiv"] = arxiv_record
+    '''
+    if biblio_glutton_url != None:
+        if "doi" in local_entry:
+            local_doi = local_entry['doi']
+        if "arxiv" in local_entry and "doi" in local_entry["arxiv"]:
+            local_doi = local_entry["arxiv"]['doi']
+        local_pmcid = None
+        if "pmicd" in local_entry:
+            local_pmcid = local_entry['pmicd']
+        local_pmid = None
+        if "pmid" in local_entry:
+            local_pmid = local_entry['pmid']
+        glutton_record = _biblio_glutton_lookup(biblio_glutton_url,
+                                                doi=local_doi,
+                                                pmcid=local_pmcid,
+                                                pmid=local_pmid,
+                                                crossref_base= crossref_base, 
+                                                crossref_email=crossref_email)
+        if glutton_record != None:
+            local_entry["glutton"] = glutton_record
+            if not "doi" in local_entry and "doi" in glutton_record:
+                local_entry["doi"] = glutton_record["doi"]
+            if not "pmid" in local_entry and "pmid" in glutton_record:
+                local_entry["pmid"] = glutton_record["pmid"]
+            if not "pmcid" in local_entry and "pmcid" in glutton_record:
+                local_entry["pmcid"] = glutton_record["pmcid"]    
+            if not "istexId" in local_entry and "istexId" in glutton_record:
+                local_entry["istexId"] = glutton_record["istexId"]
+
+    # LaTeX sources
+    arxiv_url_sources = arxiv_url_to_path(url, sources=True, ext='.zip')
+    print(arxiv_url_sources)
+    result = _download_requests(arxiv_url_sources, filename)
+    
+
+    return result, local_entry
+
+
+def _download_plos_extra(url, filename, local_entry, config=None):
+    result = FAIL_DOWNLOAD
+    
+    plos_id = plos_url_to_path(url, ext='.xml')
+    print(plos_id)
+
+    return result, local_entry
+
+def _download(url, filename, local_entry, config=None):
     # optional biblio-glutton look-up
     global biblio_glutton_url
     global crossref_base
     global crossref_email
 
     # check mirror resources
-    if config != None and "arxiv_base" in config and len(config["arxiv_base"]) > 1 and url.find("arxiv.org") != -1:
+    if url.find("arxiv.org") != -1 and config != None and "arxiv" in config["resources"] and "arxiv_bucket_name" in config["resources"]["arxiv"] and config["resources"]["arxiv"]["arxiv_bucket_name"] and len(config["resources"]["arxiv"]["arxiv_bucket_name"]) > 1:
         # use arxiv mirror for getting the PDF, arXiv metadata (they will be added to the local_entry dict
         # and latex sources if available)
+        # as there's nothing more to download in this case, we stop here
+        return _download_arxiv(url, filename, local_entry, config= config)
 
-
-        break
-
-    if config != None and "plos_base" in config and len(config["plos_base"]) > 1 and url.find("plos.org") != -1:
+    if url.find("plos.org") != -1 and config != None and "plos" in config["resources"] and "plos_bucket_name" in config["resources"]["plos"] and config["resources"]["plos"]["plos_bucket_name"] and len(config["resources"]["plos"]["plos_bucket_name"]) > 1:
         # add extra PLOS resources: JATS XML fulltext and possible extra annotations
-        
-
-
-
-
-
-
+        _download_plos_extra(url, filename, local_entry, config= config)
 
     if biblio_glutton_url != None:
         local_doi = None
@@ -1285,14 +1347,29 @@ def generateStoragePath(identifier):
     '''
     return os.path.join(identifier[:2], identifier[2:4], identifier[4:6], identifier[6:8])
 
-def _load_config(path='./config.json'):
+def _load_config(config_file='./config.yaml'):
     """
-    Load the json configuration 
+    Load the yaml configuration
     """
-    config_json = open(path).read()
-    return json.loads(config_json)
+    if config_file and os.path.exists(config_file) and os.path.isfile(config_file):
+        with open(config_file, 'r') as the_file:
+            raw_configuration = the_file.read()
+        try:
+            configuration = yaml.safe_load(raw_configuration)
+        except:
+            # note: it appears complicated to get parse error details from the exception
+            configuration = None
 
-def arxiv_url_to_path(url, ext='.pdf'):
+        if configuration == None:
+            msg = "Error: yaml config file cannot be parsed: " + str(config_file)
+            raise Exception(msg)
+    else:
+        msg = "Error: configuration file is not valid: " + str(config_file)
+        raise Exception(msg)
+
+    return configuration    
+
+def arxiv_url_to_path(url, sources=False, ext='.pdf'):
     """
     In order to access to an arXiv PDF via a mirror path based on the requested arXiv PDF URL
     See https://github.com/kermitt2/arxiv_harvester to create the mirror
@@ -1302,7 +1379,10 @@ def arxiv_url_to_path(url, ext='.pdf'):
         prefix = "arxiv" if _id[0].isdigit() else _id.split('/')[0]
         filename = url.split('/')[-1]
         yymm = filename[:4]
-        return '/'.join([prefix, yymm, filename, filename + ext])
+        if sources:
+            return '/'.join([prefix, yymm, filename, "sources", filename + ext])
+        else:
+            return '/'.join([prefix, yymm, filename, filename + ext])
     except:
         logging.exception("Incorrect arXiv url format, could not extract path")
 
@@ -1313,9 +1393,13 @@ def plos_url_to_path(url, ext='.xml'):
     https://allof.plos.org/allofplos.zip
     or
     https://github.com/PLOS/allofplos 
+
+    input url is as follow:
+    https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0263309&type=printable
     """
     try:
-
+        _id = re.findall(r"10\.1371\//(.*)&", url)[0]
+        return _id
     except:
         logging.exception("Incorrect PLOS PDF url format, could not extract path")
 
@@ -1323,10 +1407,10 @@ def test():
     harvester = OAHarvester()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description = "Open Access PDF harvester")
+    parser = argparse.ArgumentParser(description = "Open Access PDF and metadata harvester")
     parser.add_argument("--unpaywall", default=None, help="path to the Unpaywall dataset (gzipped)") 
     parser.add_argument("--pmc", default=None, help="path to the pmc file list, as available on NIH's site") 
-    parser.add_argument("--config", default="./config.json", help="path to the config file, default is ./config.json") 
+    parser.add_argument("--config", default="./config.yaml", help="path to the config file, default is ./config.yaml") 
     parser.add_argument("--dump", default="map.jsonl", help="write a map with UUID, article main identifiers and available harvested resources") 
     parser.add_argument("--reprocess", action="store_true", help="reprocessed failed entries with OA link") 
     parser.add_argument("--reset", action="store_true", help="ignore previous processing states, clear the existing storage and re-init the harvesting process from the beginning") 
@@ -1347,12 +1431,12 @@ if __name__ == "__main__":
     config = _load_config(config_path)
 
     # some global variables
-    if "biblio_glutton_base" in config and len(config["biblio_glutton_base"].strip())>0:
-        biblio_glutton_url = _biblio_glutton_url(config["biblio_glutton_base"], None)
-    if "crossref_base" in config and len(config["crossref_base"].strip())>0:
-        crossref_base = config["crossref_base"]
-    if "crossref_email" in config and len(config["crossref_email"].strip())>0:
-        crossref_email = config["crossref_email"]
+    if "metadata" in config and "biblio_glutton_base" in config["metadata"] and config["metadata"]["biblio_glutton_base"] and len(config["metadata"]["biblio_glutton_base"].strip())>0:
+        biblio_glutton_url = _biblio_glutton_url(config["metadata"]["biblio_glutton_base"], None)
+    if "metadata" in config and "crossref_base" in config["metadata"] and config["metadata"]["crossref_base"] and len(config["metadata"]["crossref_base"].strip())>0:
+        crossref_base = config["metadata"]["crossref_base"]
+    if "metadata" in config and "crossref_email" in config["metadata"] and config["metadata"]["crossref_email"] and len(config["metadata"]["crossref_email"].strip())>0:
+        crossref_email = config["metadata"]["crossref_email"]
 
     harvester = OAHarvester(config=config, thumbnail=thumbnail, sample=sample)
 
