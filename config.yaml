@@ -16,18 +16,18 @@ batch_size: 100
 resources:
     pmc:
         prioritize_pmc: true,
-        pmc_base": "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/"
+        pmc_base: "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/"
     arxiv:
-        arxiv_bucket_name": ~
-        aws_access_key_id": ~
-        aws_secret_access_key": ~
-        region": ~
+        arxiv_bucket_name: ~
+        aws_access_key_id: ~
+        aws_secret_access_key: ~
+        region: ~
         aws_end_point: ~
     plos:
-        plos_bucket_name": ~
-        aws_access_key_id": ~
-        aws_secret_access_key": ~
-        region": ~
+        plos_bucket_name: ~
+        aws_access_key_id: ~
+        aws_secret_access_key: ~
+        region: ~
         aws_end_point: ~
 
 # metadat services to use to retrieve metadata
@@ -38,10 +38,10 @@ metadata:
 
 # storage on S3 compatible object storage
 aws:
-    aws_access_key_id": ~
-    aws_secret_access_key": ~
-    bucket_name": ~
-    region": ~
+    aws_access_key_id: ~
+    aws_secret_access_key: ~
+    bucket_name: ~
+    region: ~
     aws_end_point: ~
 
 # storage on OpenStack Swift object storage
@@ -60,4 +60,3 @@ swift:
         os_project_id: ~
         os_region_name: ~
         os_auth_url: ~
-    

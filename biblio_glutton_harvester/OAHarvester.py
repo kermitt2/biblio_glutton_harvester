@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 import shutil
 import gzip
 import json
@@ -43,6 +44,9 @@ logging.getLogger("swiftclient").setLevel(logging.ERROR)
 biblio_glutton_url = None
 crossref_base = None
 crossref_email = None
+s3_arxiv = None
+s3_plos = None
+global_config = None
 
 SUCCESS_DOWNLOAD = 'success'
 FAIL_DOWNLOAD = 'fail'
@@ -56,6 +60,9 @@ This version uses the standard ThreadPoolExecutor for parallelizing the download
 class OAHarvester(object):
 
     def __init__(self, config, thumbnail=False, sample=None):
+        global s3_arxiv
+        global s3_plos
+
         self.config = config
         
         # standard lmdb environment for storing biblio entries by uuid
@@ -81,6 +88,12 @@ class OAHarvester(object):
         self.swift = None
         if "swift" in self.config and self.config["swift"] and len(self.config["swift"])>0 and "swift_container" in self.config["swift"] and self.config["swift"]["swift_container"] and len(self.config["swift"]["swift_container"])>0:
             self.swift = swift.Swift(self.config["swift"])
+
+        if "arxiv" in self.config["resources"] and "arxiv_bucket_name" in self.config["resources"]["arxiv"] and self.config["resources"]["arxiv"]["arxiv_bucket_name"] and len(self.config["resources"]["arxiv"]["arxiv_bucket_name"].strip()) > 0:
+            config["resources"]["arxiv"]["bucket_name"] = config["resources"]["arxiv"]["arxiv_bucket_name"]
+            s3_arxiv = S3.S3(config["resources"]["arxiv"])
+
+
 
     def _init_lmdb(self):
         # create the data path if it does not exist 
@@ -203,14 +216,14 @@ class OAHarvester(object):
                             break
 
             # if we have a mirror of arXiv, we prioritize arxiv resources for hugher chance of successful download
-            if "arxiv" in self.config["resources"] and "arxiv_bucket_name" in self.config["resources"]["arxiv"] and self.config["resources"]["arxiv"]["arxiv_bucket_name"] and len(self.config["resources"]["arxiv"]["arxiv_bucket_name"])>1:
+            if "arxiv" in self.config["resources"] and "arxiv_bucket_name" in self.config["resources"]["arxiv"] and self.config["resources"]["arxiv"]["arxiv_bucket_name"] and len(self.config["resources"]["arxiv"]["arxiv_bucket_name"])>0:
                 for oa_location in entry['oa_locations']:
-                    if oa_location.find('arxiv.org') != -1:
+                    if oa_location["url"].find('arxiv.org') != -1:
                         entry['best_oa_location'] = oa_location
                         break
 
             # if we have a PLOS resource, we use the PLOS PDF url, but also the PLOS mirror to get the JATS and TEI full text versions
-            if "plos" in self.config["resources"] and "plos_bucket_name" in self.config["resources"]["plos"] and self.config["resources"]["plos"]["plos_bucket_name"] and len(self.config["resources"]["plos"]["plos_bucket_name"])>1:
+            if "plos" in self.config["resources"] and "plos_bucket_name" in self.config["resources"]["plos"] and self.config["resources"]["plos"]["plos_bucket_name"] and len(self.config["resources"]["plos"]["plos_bucket_name"])>0:
                 for oa_location in entry['oa_locations']:
                     if oa_location['url_for_pdf'].find('plos.org') != -1:
                         entry['best_oa_location'] = oa_location
@@ -226,7 +239,7 @@ class OAHarvester(object):
             if 'best_oa_location' in entry and entry['best_oa_location'] != None and 'url_for_pdf' in entry['best_oa_location'] and entry['best_oa_location']['url_for_pdf'] == None:
                 del entry['best_oa_location']
 
-            if (not 'best_oa_location' in entry and 'oa_locations' in entry and len(entry['oa_locations'])>0):
+            if not 'best_oa_location' in entry and 'oa_locations' in entry and len(entry['oa_locations'])>0:
 
                 # the best oa_location identified with a "is_best" attribute, we need a valid link to a PDF too
                 for oa_location in entry['oa_locations']:
@@ -244,7 +257,7 @@ class OAHarvester(object):
                             #consider alternative non-best PDF URL with better chance of download,
                             if not 'alternative_oa_locations' in entry:
                                 entry['alternative_oa_locations'] = []
-                            entry['alternative_oa_locations'].append(oa_location)                            
+                            entry['alternative_oa_locations'].append(oa_location)
 
             if 'oa_locations' in entry and len(entry['oa_locations'])>0:
                 if not 'best_oa_location' in entry:
@@ -899,19 +912,43 @@ def _deserialize_pickle(serialized):
     return pickle.loads(serialized)
 
 def _download_arxiv(url, filename, local_entry, config= None):
+    global biblio_glutton_url
+    global crossref_base
+    global crossref_email
+    global global_config
+    global s3_arxiv
+
+    if config == None:
+        config = global_config
+
     result = FAIL_DOWNLOAD
-    
+
+    print("_download_arxiv", url)
+
     # PDF
     arxiv_url_pdf = arxiv_url_to_path(url, ext='.pdf.gz')
-    print(arxiv_url_pdf)
-    result = _download_requests(arxiv_url_pdf, filename)
-    
+    print("arxiv_url_pdf:", arxiv_url_pdf)
+    # we are using S3 at this stage
+    file_path = None
+    if s3_arxiv != None:
+        file_path = s3_arxiv.download_file(arxiv_url_pdf, filename)
+    else:
+        logging.error("S3 settings for accessing arXiv mirror are not valid")
+
+    if file_path != None:
+        print(file_path)
+        result = SUCCESS_DOWNLOAD
+
     # arXiv metadata
     arxiv_url_json = arxiv_url_to_path(url, ext='.json.gz')
-    print(arxiv_url_json)
-    result = _download_requests(arxiv_url_json, filename)
+    print("arxiv_url_json:", arxiv_url_json)
+    
     # load downloaded arxiv_record json
-
+    json_filename = filename.replace(".pdf.gz", "json.gz")
+    if s3_arxiv != None:
+        s3_arxiv.download_file(arxiv_url_json, json_filename)
+    else:
+        logging.error("S3 settings for accessing arXiv mirror are not valid")
     '''
     if result == SUCCESS_DOWNLOAD:
         arxiv_record = 
@@ -948,18 +985,21 @@ def _download_arxiv(url, filename, local_entry, config= None):
 
     # LaTeX sources
     arxiv_url_sources = arxiv_url_to_path(url, sources=True, ext='.zip')
-    print(arxiv_url_sources)
-    result = _download_requests(arxiv_url_sources, filename)
-    
+    print("arxiv_url_sources", arxiv_url_sources)
+    if s3_arxiv != None:
+        s3_arxiv.download_file(arxiv_url_json, json_filename)
+    else:
+        logging.error("S3 settings for accessing arXiv mirror are not valid")
 
     return result, local_entry
-
 
 def _download_plos_extra(url, filename, local_entry, config=None):
     result = FAIL_DOWNLOAD
     
+    print("_download_plos", url)
+
     plos_id = plos_url_to_path(url, ext='.xml')
-    print(plos_id)
+    print("plos_id:", plos_id)
 
     return result, local_entry
 
@@ -968,6 +1008,12 @@ def _download(url, filename, local_entry, config=None):
     global biblio_glutton_url
     global crossref_base
     global crossref_email
+    global global_config
+
+    if config == None:
+        config = global_config
+
+    print("_download", url)
 
     # check mirror resources
     if url.find("arxiv.org") != -1 and config != None and "arxiv" in config["resources"] and "arxiv_bucket_name" in config["resources"]["arxiv"] and config["resources"]["arxiv"]["arxiv_bucket_name"] and len(config["resources"]["arxiv"]["arxiv_bucket_name"]) > 1:
@@ -1007,28 +1053,43 @@ def _download(url, filename, local_entry, config=None):
             if not "istexId" in local_entry and "istexId" in glutton_record:
                 local_entry["istexId"] = glutton_record["istexId"]
 
-    result = _download_cloudscraper(url, filename)
-    if result != SUCCESS_DOWNLOAD:        
-        if str(url).startswith("ftp"):
-            result = _download_ftp(url, filename)
-        else:
-            result = _download_requests(url, filename)
+    result = FAIL_DOWNLOAD
+    if str(url).startswith("ftp"): 
+        result = _download_wget(url, filename)
+        if result != "success":
+            # this appears to be not reliable at all with lot of decompression errors
+            # but as last options why not
+            result = _download_ftp(url, filename) 
 
     if result != SUCCESS_DOWNLOAD:
+        result = _download_cloudscraper(url, filename)
+
+    if result != SUCCESS_DOWNLOAD:
+        result = _download_requests(url, filename)
+
+    if result != SUCCESS_DOWNLOAD and not str(url).startswith("ftp"):
         result = _download_wget(url, filename)
 
     if result != SUCCESS_DOWNLOAD:
         # look for alternative url if present in the entry
         if "alternative_oa_locations" in local_entry:
             for alternative_oa_location in local_entry['alternative_oa_locations']:
-                result = _download_cloudscraper(alternative_oa_location, filename)
-                if result != SUCCESS_DOWNLOAD:
-                    if str(url).startswith("ftp"):
-                        result = _download_ftp(url, filename)
-                    else:
-                        result = _download_requests(url, filename)
-                if result != SUCCESS_DOWNLOAD:
+                if str(alternative_oa_location).startswith("ftp"): 
                     result = _download_wget(alternative_oa_location, filename)
+                    if result != "success":
+                        # this appears to be not reliable at all with lot of decompression errors
+                        # but as last options why not
+                        result = _download_ftp(alternative_oa_location, filename) 
+
+                if result != SUCCESS_DOWNLOAD:
+                    result = _download_cloudscraper(alternative_oa_location, filename)
+
+                if result != SUCCESS_DOWNLOAD:
+                    result = _download_requests(alternative_oa_location, filename)
+
+                if result != SUCCESS_DOWNLOAD and not str(alternative_oa_location).startswith("ftp"):
+                    result = _download_wget(alternative_oa_location, filename)
+
                 if result == SUCCESS_DOWNLOAD:
                     local_entry['best_oa_location'] = alternative_oa_location
                     break
@@ -1351,6 +1412,7 @@ def _load_config(config_file='./config.yaml'):
     """
     Load the yaml configuration
     """
+    global global_config
     if config_file and os.path.exists(config_file) and os.path.isfile(config_file):
         with open(config_file, 'r') as the_file:
             raw_configuration = the_file.read()
@@ -1366,6 +1428,7 @@ def _load_config(config_file='./config.yaml'):
     else:
         msg = "Error: configuration file is not valid: " + str(config_file)
         raise Exception(msg)
+    global_config = configuration
 
     return configuration    
 
@@ -1398,7 +1461,7 @@ def plos_url_to_path(url, ext='.xml'):
     https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0263309&type=printable
     """
     try:
-        _id = re.findall(r"10\.1371\//(.*)&", url)[0]
+        _id = re.findall(r"10\.1371\/(.*)&", url)[0]
         return _id
     except:
         logging.exception("Incorrect PLOS PDF url format, could not extract path")
@@ -1429,6 +1492,8 @@ if __name__ == "__main__":
     sample = args.sample
 
     config = _load_config(config_path)
+
+    print(config)
 
     # some global variables
     if "metadata" in config and "biblio_glutton_base" in config["metadata"] and config["metadata"]["biblio_glutton_base"] and len(config["metadata"]["biblio_glutton_base"].strip())>0:
