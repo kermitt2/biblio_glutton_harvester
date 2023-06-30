@@ -240,21 +240,21 @@ class OAHarvester(object):
                 del entry['best_oa_location']
 
             if not 'best_oa_location' in entry and 'oa_locations' in entry and len(entry['oa_locations'])>0:
-
                 # the best oa_location identified with a "is_best" attribute, we need a valid link to a PDF too
                 for oa_location in entry['oa_locations']:
                     if oa_location['is_best'] and 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
                         entry['best_oa_location'] = oa_location
                         break
 
+            if 'oa_locations' in entry and len(entry['oa_locations'])>0:
                 # if still no best location, take the first one with a valid link to a PDF
-                #if not 'best_oa_location' in entry:
+                # otherwise, we store lternative non-best PDF URL to improve chance of download
                 for oa_location in entry['oa_locations']:
                     if 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
                         if not 'best_oa_location' in entry:
                             entry['best_oa_location'] = oa_location
                         elif entry['best_oa_location'] != oa_location:
-                            #consider alternative non-best PDF URL with better chance of download,
+                            # consider alternative non-best PDF URL to improve chance of download,
                             if not 'alternative_oa_locations' in entry:
                                 entry['alternative_oa_locations'] = []
                             entry['alternative_oa_locations'].append(oa_location)
@@ -780,15 +780,22 @@ class OAHarvester(object):
 
         # clean any possibly remaining tmp files (.pdf and .png)
         for f in os.listdir(self.config["data_path"]):
+            local_file_path = os.path.join(self.config["data_path"], f)
             if f.endswith(".pdf") or f.endswith(".png") or f.endswith(".nxml") or f.endswith(".tar.gz") or f.endswith(".xml"):
-                os.remove(os.path.join(self.config["data_path"], f))
-            # clean any existing data files  
-            path = os.path.join(self.config["data_path"], f)
-            if os.path.isdir(path):
                 try:
-                    shutil.rmtree(path)
+                    if os.path.isdir(local_file_path):
+                        # it should normally not be the case, but for robustness...
+                        shutil.rmtree(local_file_path)
+                    else:
+                        os.remove(local_file_path)
                 except OSError:
-                    logging.exception("Error cleaning tmp files")
+                    logging.exception("Error cleaning tmp file: " + local_file_path)        
+            # clean any existing data files  
+            if os.path.isdir(local_file_path):
+                try:
+                    shutil.rmtree(local_file_path)
+                except OSError:
+                    logging.exception("Error cleaning tmp files: " + local_file_path)
 
         # re-init the environments
         self._init_lmdb()
@@ -1013,7 +1020,7 @@ def _download(url, filename, local_entry, config=None):
     if config == None:
         config = global_config
 
-    print("_download", url)
+    #print("_download", url)
 
     # check mirror resources
     if url.find("arxiv.org") != -1 and config != None and "arxiv" in config["resources"] and "arxiv_bucket_name" in config["resources"]["arxiv"] and config["resources"]["arxiv"]["arxiv_bucket_name"] and len(config["resources"]["arxiv"]["arxiv_bucket_name"]) > 1:

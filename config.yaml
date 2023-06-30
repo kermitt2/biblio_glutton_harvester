@@ -18,17 +18,19 @@ resources:
         prioritize_pmc: true,
         pmc_base: "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/"
     arxiv:
-        arxiv_bucket_name: ~
-        aws_access_key_id: ~
-        aws_secret_access_key: ~
-        region: ~
-        aws_end_point: ~
+        s3:
+            arxiv_bucket_name: ~
+            aws_access_key_id: ~
+            aws_secret_access_key: ~
+            region: ~
+            aws_end_point: ~
     plos:
-        plos_bucket_name: ~
-        aws_access_key_id: ~
-        aws_secret_access_key: ~
-        region: ~
-        aws_end_point: ~
+        s3:
+            plos_bucket_name: ~
+            aws_access_key_id: ~
+            aws_secret_access_key: ~
+            region: ~
+            aws_end_point: ~
 
 # metadat services to use to retrieve metadata
 metadata:
