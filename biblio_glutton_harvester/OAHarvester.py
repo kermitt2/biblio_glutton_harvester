@@ -45,7 +45,9 @@ biblio_glutton_url = None
 crossref_base = None
 crossref_email = None
 s3_arxiv = None
+swift_arxiv = None
 s3_plos = None
+swift_plos = None
 global_config = None
 
 SUCCESS_DOWNLOAD = 'success'
@@ -61,7 +63,9 @@ class OAHarvester(object):
 
     def __init__(self, config, thumbnail=False, sample=None):
         global s3_arxiv
+        global swift_arxiv
         global s3_plos
+        global swift_plos
 
         self.config = config
         
@@ -89,11 +93,29 @@ class OAHarvester(object):
         if "swift" in self.config and self.config["swift"] and len(self.config["swift"])>0 and "swift_container" in self.config["swift"] and self.config["swift"]["swift_container"] and len(self.config["swift"]["swift_container"])>0:
             self.swift = swift.Swift(self.config["swift"])
 
-        if "arxiv" in self.config["resources"] and "arxiv_bucket_name" in self.config["resources"]["arxiv"] and self.config["resources"]["arxiv"]["arxiv_bucket_name"] and len(self.config["resources"]["arxiv"]["arxiv_bucket_name"].strip()) > 0:
-            config["resources"]["arxiv"]["bucket_name"] = config["resources"]["arxiv"]["arxiv_bucket_name"]
-            s3_arxiv = S3.S3(config["resources"]["arxiv"])
+        # arxiv minor, either S3 compatible storage or Swift OpenStack
+        if "arxiv" in self.config["resources"] and "s3" in self.config["resources"]["arxiv"]:
+            # arvix mirror is deployed as a S3 storage
+            if "arxiv_bucket_name" in self.config["resources"]["arxiv"]["s3"] and self.config["resources"]["arxiv"]["s3"]["arxiv_bucket_name"] and len(self.config["resources"]["arxiv"]["s3"]["arxiv_bucket_name"].strip()) > 0:
+                self.config["resources"]["arxiv"]["s3"]["bucket_name"] = config["resources"]["arxiv"]["s3"]["arxiv_bucket_name"]
+                s3_arxiv = S3.S3(self.config["resources"]["arxiv"]["s3"])
+        elif "arxiv" in self.config["resources"] and "swift" in self.config["resources"]["arxiv"]:
+            # arvix mirror is deployed as an OpenStack Swift object storage
+            if "arxiv_swift_container" in self.config["resources"]["arxiv"]["swift"]:
+                self.config["resources"]["arxiv"]["swift"]["swift_container"] = config["resources"]["arxiv"]["swift"]["arxiv_swift_container"]
+                swift_arxiv = swift.Swift(self.config["resources"]["arxiv"]["swift"])
 
-
+        # plos mirror, either S3 compatible storage or Swift OpenStack
+        if "plos" in self.config["resources"] and "s3" in self.config["resources"]["plos"]:
+            # arvix mirror is deployed as a S3 storage
+            if "plos_bucket_name" in self.config["resources"]["plos"]["s3"] and self.config["resources"]["plos"]["s3"]["plos_bucket_name"] and len(self.config["resources"]["plos"]["s3"]["plos_bucket_name"].strip()) > 0:
+                self.config["resources"]["plos"]["s3"]["bucket_name"] = config["resources"]["plos"]["s3"]["plos_bucket_name"]
+                s3_plos = S3.S3(self.config["resources"]["plos"]["s3"])
+        elif "plos" in self.config["resources"] and "swift" in self.config["resources"]["plos"]:
+            # arvix mirror is deployed as an Openstack Swift object storage
+            if "plos_swift_container" in self.config["resources"]["plos"]["swift"]:
+                self.config["resources"]["plos"]["swift"]["swift_container"] = config["resources"]["plos"]["swift"]["plos_swift_container"]
+                swift_plos = swift.Swift(self.config["resources"]["plos"]["swift"])
 
     def _init_lmdb(self):
         # create the data path if it does not exist 
@@ -924,6 +946,7 @@ def _download_arxiv(url, filename, local_entry, config= None):
     global crossref_email
     global global_config
     global s3_arxiv
+    global swift_arxiv
 
     if config == None:
         config = global_config
@@ -939,8 +962,10 @@ def _download_arxiv(url, filename, local_entry, config= None):
     file_path = None
     if s3_arxiv != None:
         file_path = s3_arxiv.download_file(arxiv_url_pdf, filename)
+    elif swift_arxiv != None:
+        file_path = swift_arxiv.download_file(arxiv_url_pdf, filename)
     else:
-        logging.error("S3 settings for accessing arXiv mirror are not valid")
+        logging.error("S3/Swift settings for accessing arXiv mirror are not valid")
 
     if file_path != None:
         print(file_path)
@@ -954,8 +979,10 @@ def _download_arxiv(url, filename, local_entry, config= None):
     json_filename = filename.replace(".pdf.gz", "json.gz")
     if s3_arxiv != None:
         s3_arxiv.download_file(arxiv_url_json, json_filename)
+    elif swift_arxiv != None:
+        swift_arxiv.download_file(arxiv_url_json, json_filename)
     else:
-        logging.error("S3 settings for accessing arXiv mirror are not valid")
+        logging.error("S3/Swift settings for accessing arXiv mirror are not valid")
     '''
     if result == SUCCESS_DOWNLOAD:
         arxiv_record = 
@@ -995,12 +1022,17 @@ def _download_arxiv(url, filename, local_entry, config= None):
     print("arxiv_url_sources", arxiv_url_sources)
     if s3_arxiv != None:
         s3_arxiv.download_file(arxiv_url_json, json_filename)
+    elif swift_arxiv != None:
+        swift_arxiv.download_file(arxiv_url_json, json_filename)
     else:
-        logging.error("S3 settings for accessing arXiv mirror are not valid")
+        logging.error("S3/Swift settings for accessing arXiv mirror are not valid")
 
     return result, local_entry
 
 def _download_plos_extra(url, filename, local_entry, config=None):
+    global s3_plos
+    global swift_plos
+
     result = FAIL_DOWNLOAD
     
     print("_download_plos", url)
