@@ -94,26 +94,24 @@ class OAHarvester(object):
             self.swift = swift.Swift(self.config["swift"])
 
         # arxiv minor, either S3 compatible storage or Swift OpenStack
-        if "arxiv" in self.config["resources"] and "s3" in self.config["resources"]["arxiv"]:
-            # arvix mirror is deployed as a S3 storage
-            if "arxiv_bucket_name" in self.config["resources"]["arxiv"]["s3"] and self.config["resources"]["arxiv"]["s3"]["arxiv_bucket_name"] and len(self.config["resources"]["arxiv"]["s3"]["arxiv_bucket_name"].strip()) > 0:
+        if _arxiv_mirror(self.config):
+            if "s3" in self.config["resources"]["arxiv"] and "arxiv_bucket_name" in self.config["resources"]["arxiv"]["s3"] and self.config["resources"]["arxiv"]["s3"]["arxiv_bucket_name"] and len(self.config["resources"]["arxiv"]["s3"]["arxiv_bucket_name"].strip()) > 0:
+                # arvix mirror is deployed as a S3 storage
                 self.config["resources"]["arxiv"]["s3"]["bucket_name"] = config["resources"]["arxiv"]["s3"]["arxiv_bucket_name"]
                 s3_arxiv = S3.S3(self.config["resources"]["arxiv"]["s3"])
-        elif "arxiv" in self.config["resources"] and "swift" in self.config["resources"]["arxiv"]:
-            # arvix mirror is deployed as an OpenStack Swift object storage
-            if "arxiv_swift_container" in self.config["resources"]["arxiv"]["swift"]:
+            elif "swift" in self.config["resources"]["arxiv"] and "arxiv_swift_container" in self.config["resources"]["arxiv"]["swift"] and self.config["resources"]["arxiv"]["swift"]["arxiv_swift_container"] and len(self.config["resources"]["arxiv"]["swift"]["arxiv_swift_container"])>0:
+                # arvix mirror is deployed as an OpenStack Swift object storage
                 self.config["resources"]["arxiv"]["swift"]["swift_container"] = config["resources"]["arxiv"]["swift"]["arxiv_swift_container"]
                 swift_arxiv = swift.Swift(self.config["resources"]["arxiv"]["swift"])
 
         # plos mirror, either S3 compatible storage or Swift OpenStack
-        if "plos" in self.config["resources"] and "s3" in self.config["resources"]["plos"]:
-            # arvix mirror is deployed as a S3 storage
-            if "plos_bucket_name" in self.config["resources"]["plos"]["s3"] and self.config["resources"]["plos"]["s3"]["plos_bucket_name"] and len(self.config["resources"]["plos"]["s3"]["plos_bucket_name"].strip()) > 0:
+        if _plos_mirror(self.config):
+            if "s3" in self.config["resources"]["plos"] and "plos_bucket_name" in self.config["resources"]["plos"]["s3"] and self.config["resources"]["plos"]["s3"]["plos_bucket_name"] and len(self.config["resources"]["plos"]["s3"]["plos_bucket_name"].strip()) > 0:
+                # plos mirror is deployed as a S3 storage
                 self.config["resources"]["plos"]["s3"]["bucket_name"] = config["resources"]["plos"]["s3"]["plos_bucket_name"]
                 s3_plos = S3.S3(self.config["resources"]["plos"]["s3"])
-        elif "plos" in self.config["resources"] and "swift" in self.config["resources"]["plos"]:
-            # arvix mirror is deployed as an Openstack Swift object storage
-            if "plos_swift_container" in self.config["resources"]["plos"]["swift"]:
+            elif "swift" in self.config["resources"]["plos"] and "plos_swift_container" in self.config["resources"]["plos"]["swift"] and self.config["resources"]["plos"]["swift"]["plos_swift_container"] and len(self.config["resources"]["plos"]["swift"]["plos_swift_container"])>0:
+                # plos mirror is deployed as an Openstack Swift object storage
                 self.config["resources"]["plos"]["swift"]["swift_container"] = config["resources"]["plos"]["swift"]["plos_swift_container"]
                 swift_plos = swift.Swift(self.config["resources"]["plos"]["swift"])
 
@@ -238,14 +236,14 @@ class OAHarvester(object):
                             break
 
             # if we have a mirror of arXiv, we prioritize arxiv resources for hugher chance of successful download
-            if "arxiv" in self.config["resources"] and "arxiv_bucket_name" in self.config["resources"]["arxiv"] and self.config["resources"]["arxiv"]["arxiv_bucket_name"] and len(self.config["resources"]["arxiv"]["arxiv_bucket_name"])>0:
+            if _arxiv_mirror(self.config):
                 for oa_location in entry['oa_locations']:
                     if oa_location["url"].find('arxiv.org') != -1:
                         entry['best_oa_location'] = oa_location
                         break
 
             # if we have a PLOS resource, we use the PLOS PDF url, but also the PLOS mirror to get the JATS and TEI full text versions
-            if "plos" in self.config["resources"] and "plos_bucket_name" in self.config["resources"]["plos"] and self.config["resources"]["plos"]["plos_bucket_name"] and len(self.config["resources"]["plos"]["plos_bucket_name"])>0:
+            if _plos_mirror(self.config):
                 for oa_location in entry['oa_locations']:
                     if oa_location['url_for_pdf'].find('plos.org') != -1:
                         entry['best_oa_location'] = oa_location
@@ -478,6 +476,12 @@ class OAHarvester(object):
                     valid_file = True
                     local_entry["valid_fulltext_xml"] = True
 
+            local_filename = os.path.join(self.config["data_path"], local_entry['id']+".jats.xml")
+            if os.path.isfile(local_filename): 
+                if _is_valid_file(local_filename, "xml"):
+                    valid_file = True
+                    local_entry["valid_fulltext_xml"] = True
+
             if (result[0] is None or result[0] == "0" or result[0] == SUCCESS_DOWNLOAD) and valid_file:
                 #update DB
                 with self.env.begin(write=True) as txn:
@@ -510,6 +514,18 @@ class OAHarvester(object):
                 local_filename = os.path.join(self.config["data_path"], local_entry['id']+".nxml")
                 if os.path.isfile(local_filename): 
                     os.remove(local_filename)
+                local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pub2tei.tei.xml")
+                if os.path.isfile(local_filename): 
+                    os.remove(local_filename)
+                local_filename = os.path.join(self.config["data_path"], local_entry['id']+".zip")
+                if os.path.isfile(local_filename): 
+                    os.remove(local_filename)
+                local_filename = os.path.join(self.config["data_path"], local_entry['id']+".jats.xml")
+                if os.path.isfile(local_filename): 
+                    os.remove(local_filename)
+                local_filename = os.path.join(self.config["data_path"], local_entry['id']+".json")
+                if os.path.isfile(local_filename): 
+                    os.remove(local_filename)
 
         # finally we can parallelize the thumbnail/upload/file cleaning steps for this batch
         with ThreadPoolExecutor(max_workers=12) as executor:
@@ -522,9 +538,15 @@ class OAHarvester(object):
     def manageFiles(self, local_entry):
         local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
         local_filename_nxml = os.path.join(self.config["data_path"], local_entry['id']+".nxml")
+        local_filename_jats = os.path.join(self.config["data_path"], local_entry['id']+".jats.xml")
+        local_filename_tei = os.path.join(self.config["data_path"], local_entry['id']+".pub2tei.tei.xml")
 
         # for metadata
         local_filename_json = os.path.join(self.config["data_path"], local_entry['id']+".json")
+        local_filename_software = os.path.join(self.config["data_path"], local_entry['id']+".software.json")
+
+        # for source files (usually arXiv)
+        local_filename_sources = os.path.join(self.config["data_path"], local_entry['id']+".zip")
 
         # generate thumbnails
         if self.thumbnail:
@@ -559,9 +581,23 @@ class OAHarvester(object):
                     subprocess.check_call(['gzip', '-f', local_filename_nxml])
                     local_filename_nxml += compression_suffix
 
+                if os.path.isfile(local_filename_jats):
+                    subprocess.check_call(['gzip', '-f', local_filename_jats])
+                    local_filename_jats += compression_suffix    
+
+                if os.path.isfile(local_filename_tei):
+                    subprocess.check_call(['gzip', '-f', local_filename_tei])
+                    local_filename_tei += compression_suffix
+
                 if os.path.isfile(local_filename_json):
                     subprocess.check_call(['gzip', '-f', local_filename_json])
                     local_filename_json += compression_suffix
+
+                if os.path.isfile(local_filename_software):
+                    subprocess.check_call(['gzip', '-f', local_filename_software])
+                    local_filename_software += compression_suffix
+
+                # note: source files always as zip archive, not other compression needed
 
                 if (self.thumbnail):
                     if os.path.isfile(thumb_file_small):
@@ -587,8 +623,16 @@ class OAHarvester(object):
                     self.s3.upload_file_to_s3(local_filename, dest_path, storage_class='ONEZONE_IA')
                 if os.path.isfile(local_filename_nxml):
                     self.s3.upload_file_to_s3(local_filename_nxml, dest_path, storage_class='ONEZONE_IA')
+                if os.path.isfile(local_filename_jats):
+                    self.s3.upload_file_to_s3(local_filename_jats, dest_path, storage_class='ONEZONE_IA')
+                if os.path.isfile(local_filename_tei):
+                    self.s3.upload_file_to_s3(local_filename_tei, dest_path, storage_class='ONEZONE_IA')    
                 if os.path.isfile(local_filename_json):
                     self.s3.upload_file_to_s3(local_filename_json, dest_path, storage_class='ONEZONE_IA')
+                if os.path.isfile(local_filename_software):
+                    self.s3.upload_file_to_s3(local_filename_software, dest_path, storage_class='ONEZONE_IA')
+                if os.path.isfile(local_filename_sources):
+                    self.s3.upload_file_to_s3(local_filename_sources, dest_path, storage_class='ONEZONE_IA')
 
                 if (self.thumbnail):
                     if os.path.isfile(thumb_file_small):
@@ -610,8 +654,16 @@ class OAHarvester(object):
                     files_to_upload.append(local_filename)
                 if os.path.isfile(local_filename_nxml):
                     files_to_upload.append(local_filename_nxml)
+                if os.path.isfile(local_filename_jats):
+                    files_to_upload.append(local_filename_jats)
+                if os.path.isfile(local_filename_tei):
+                    files_to_upload.append(local_filename_tei)
                 if os.path.isfile(local_filename_json):
                     files_to_upload.append(local_filename_json)
+                if os.path.isfile(local_filename_software):
+                    files_to_upload.append(local_filename_software)
+                if os.path.isfile(local_filename_sources):
+                    files_to_upload.append(local_filename_sources)
 
                 if (self.thumbnail):
                     if os.path.isfile(thumb_file_small):
@@ -639,8 +691,16 @@ class OAHarvester(object):
                     shutil.copyfile(local_filename, os.path.join(local_dest_path, local_entry['id']+".pdf"+compression_suffix))
                 if os.path.isfile(local_filename_nxml):
                     shutil.copyfile(local_filename_nxml, os.path.join(local_dest_path, local_entry['id']+".nxml"+compression_suffix))
+                if os.path.isfile(local_filename_jats):
+                    shutil.copyfile(local_filename_jats, os.path.join(local_dest_path, local_entry['id']+".jats.xml"+compression_suffix))
+                if os.path.isfile(local_filename_tei):
+                    shutil.copyfile(local_filename_tei, os.path.join(local_dest_path, local_entry['id']+".pub2tei.tei.xml"+compression_suffix))
                 if os.path.isfile(local_filename_json):
                     shutil.copyfile(local_filename_json, os.path.join(local_dest_path, local_entry['id']+".json"+compression_suffix))
+                if os.path.isfile(local_filename_software):
+                    shutil.copyfile(local_filename_software, os.path.join(local_dest_path, local_entry['id']+".software.json"+compression_suffix))
+                if os.path.isfile(local_filename_sources):
+                    shutil.copyfile(local_filename_sources, os.path.join(local_dest_path, local_entry['id']+".zip"))
 
                 if (self.thumbnail):
                     if os.path.isfile(thumb_file_small):
@@ -661,8 +721,16 @@ class OAHarvester(object):
                 os.remove(local_filename)
             if os.path.isfile(local_filename_nxml):
                 os.remove(local_filename_nxml)
+            if os.path.isfile(local_filename_jats):
+                os.remove(local_filename_jats)
+            if os.path.isfile(local_filename_tei):
+                os.remove(local_filename_tei)
             if os.path.isfile(local_filename_json):
                 os.remove(local_filename_json)
+            if os.path.isfile(local_filename_software):
+                os.remove(local_filename_software)
+            if os.path.isfile(local_filename_sources):
+                os.remove(local_filename_sources)
 
             # possible tar.gz remaining from PMC resources
             local_filename_tar = os.path.join(self.config["data_path"], local_entry['id']+".tar.gz")
@@ -803,7 +871,7 @@ class OAHarvester(object):
         # clean any possibly remaining tmp files (.pdf and .png)
         for f in os.listdir(self.config["data_path"]):
             local_file_path = os.path.join(self.config["data_path"], f)
-            if f.endswith(".pdf") or f.endswith(".png") or f.endswith(".nxml") or f.endswith(".tar.gz") or f.endswith(".xml"):
+            if f.endswith(".pdf") or f.endswith(".png") or f.endswith(".nxml") or f.endswith(".gz") or f.endswith(".xml") or f.endswith(".zip") or f.endswith(".json"):
                 try:
                     if os.path.isdir(local_file_path):
                         # it should normally not be the case, but for robustness...
@@ -818,7 +886,7 @@ class OAHarvester(object):
                     shutil.rmtree(local_file_path)
                 except OSError:
                     logging.exception("Error cleaning tmp files: " + local_file_path)
-
+        
         # re-init the environments
         self._init_lmdb()
 
@@ -940,108 +1008,6 @@ def _serialize_pickle(a):
 def _deserialize_pickle(serialized):
     return pickle.loads(serialized)
 
-def _download_arxiv(url, filename, local_entry, config= None):
-    global biblio_glutton_url
-    global crossref_base
-    global crossref_email
-    global global_config
-    global s3_arxiv
-    global swift_arxiv
-
-    if config == None:
-        config = global_config
-
-    result = FAIL_DOWNLOAD
-
-    print("_download_arxiv", url)
-
-    # PDF
-    arxiv_url_pdf = arxiv_url_to_path(url, ext='.pdf.gz')
-    print("arxiv_url_pdf:", arxiv_url_pdf)
-    # we are using S3 at this stage
-    file_path = None
-    if s3_arxiv != None:
-        file_path = s3_arxiv.download_file(arxiv_url_pdf, filename)
-    elif swift_arxiv != None:
-        file_path = swift_arxiv.download_file(arxiv_url_pdf, filename)
-    else:
-        logging.error("S3/Swift settings for accessing arXiv mirror are not valid")
-
-    if file_path != None:
-        print(file_path)
-        result = SUCCESS_DOWNLOAD
-
-    # arXiv metadata
-    arxiv_url_json = arxiv_url_to_path(url, ext='.json.gz')
-    print("arxiv_url_json:", arxiv_url_json)
-    
-    # load downloaded arxiv_record json
-    json_filename = filename.replace(".pdf.gz", "json.gz")
-    if s3_arxiv != None:
-        s3_arxiv.download_file(arxiv_url_json, json_filename)
-    elif swift_arxiv != None:
-        swift_arxiv.download_file(arxiv_url_json, json_filename)
-    else:
-        logging.error("S3/Swift settings for accessing arXiv mirror are not valid")
-    '''
-    if result == SUCCESS_DOWNLOAD:
-        arxiv_record = 
-        if arxiv_record != None:
-            local_entry["arxiv"] = arxiv_record
-    '''
-    if biblio_glutton_url != None:
-        if "doi" in local_entry:
-            local_doi = local_entry['doi']
-        if "arxiv" in local_entry and "doi" in local_entry["arxiv"]:
-            local_doi = local_entry["arxiv"]['doi']
-        local_pmcid = None
-        if "pmicd" in local_entry:
-            local_pmcid = local_entry['pmicd']
-        local_pmid = None
-        if "pmid" in local_entry:
-            local_pmid = local_entry['pmid']
-        glutton_record = _biblio_glutton_lookup(biblio_glutton_url,
-                                                doi=local_doi,
-                                                pmcid=local_pmcid,
-                                                pmid=local_pmid,
-                                                crossref_base= crossref_base, 
-                                                crossref_email=crossref_email)
-        if glutton_record != None:
-            local_entry["glutton"] = glutton_record
-            if not "doi" in local_entry and "doi" in glutton_record:
-                local_entry["doi"] = glutton_record["doi"]
-            if not "pmid" in local_entry and "pmid" in glutton_record:
-                local_entry["pmid"] = glutton_record["pmid"]
-            if not "pmcid" in local_entry and "pmcid" in glutton_record:
-                local_entry["pmcid"] = glutton_record["pmcid"]    
-            if not "istexId" in local_entry and "istexId" in glutton_record:
-                local_entry["istexId"] = glutton_record["istexId"]
-
-    # LaTeX sources
-    arxiv_url_sources = arxiv_url_to_path(url, sources=True, ext='.zip')
-    print("arxiv_url_sources", arxiv_url_sources)
-    if s3_arxiv != None:
-        s3_arxiv.download_file(arxiv_url_json, json_filename)
-    elif swift_arxiv != None:
-        swift_arxiv.download_file(arxiv_url_json, json_filename)
-    else:
-        logging.error("S3/Swift settings for accessing arXiv mirror are not valid")
-
-    return result, local_entry
-
-def _download_plos_extra(url, filename, local_entry, config=None):
-    global s3_plos
-    global swift_plos
-
-    result = FAIL_DOWNLOAD
-    
-    print("_download_plos", url)
-
-    plos_id = plos_url_to_path(url, ext='.xml')
-    print("plos_id:", plos_id)
-
-    return result, local_entry
-
 def _download(url, filename, local_entry, config=None):
     # optional biblio-glutton look-up
     global biblio_glutton_url
@@ -1052,16 +1018,16 @@ def _download(url, filename, local_entry, config=None):
     if config == None:
         config = global_config
 
-    #print("_download", url)
+    print("_download", url)
 
     # check mirror resources
-    if url.find("arxiv.org") != -1 and config != None and "arxiv" in config["resources"] and "arxiv_bucket_name" in config["resources"]["arxiv"] and config["resources"]["arxiv"]["arxiv_bucket_name"] and len(config["resources"]["arxiv"]["arxiv_bucket_name"]) > 1:
+    if url.find("arxiv.org") != -1 and config != None and _arxiv_mirror(config):
         # use arxiv mirror for getting the PDF, arXiv metadata (they will be added to the local_entry dict
         # and latex sources if available)
         # as there's nothing more to download in this case, we stop here
         return _download_arxiv(url, filename, local_entry, config= config)
 
-    if url.find("plos.org") != -1 and config != None and "plos" in config["resources"] and "plos_bucket_name" in config["resources"]["plos"] and config["resources"]["plos"]["plos_bucket_name"] and len(config["resources"]["plos"]["plos_bucket_name"]) > 1:
+    if url.find("plos.org") != -1 and config != None and _plos_mirror(config):
         # add extra PLOS resources: JATS XML fulltext and possible extra annotations
         _download_plos_extra(url, filename, local_entry, config= config)
 
@@ -1113,25 +1079,26 @@ def _download(url, filename, local_entry, config=None):
         # look for alternative url if present in the entry
         if "alternative_oa_locations" in local_entry:
             for alternative_oa_location in local_entry['alternative_oa_locations']:
-                if str(alternative_oa_location).startswith("ftp"): 
-                    result = _download_wget(alternative_oa_location, filename)
-                    if result != "success":
-                        # this appears to be not reliable at all with lot of decompression errors
-                        # but as last options why not
-                        result = _download_ftp(alternative_oa_location, filename) 
+                if "url_for_pdf" in alternative_oa_location and alternative_oa_location["url_for_pdf"] and len(alternative_oa_location["url_for_pdf"])>0:
+                    if str(alternative_oa_location["url_for_pdf"]).startswith("ftp"): 
+                        result = _download_wget(alternative_oa_location["url_for_pdf"], filename)
+                        if result != "success":
+                            # this appears to be not reliable at all with lot of decompression errors
+                            # but as last options why not
+                            result = _download_ftp(alternative_oa_location["url_for_pdf"], filename) 
 
-                if result != SUCCESS_DOWNLOAD:
-                    result = _download_cloudscraper(alternative_oa_location, filename)
+                    if result != SUCCESS_DOWNLOAD:
+                        result = _download_cloudscraper(alternative_oa_location["url_for_pdf"], filename)
 
-                if result != SUCCESS_DOWNLOAD:
-                    result = _download_requests(alternative_oa_location, filename)
+                    if result != SUCCESS_DOWNLOAD:
+                        result = _download_requests(alternative_oa_location["url_for_pdf"], filename)
 
-                if result != SUCCESS_DOWNLOAD and not str(alternative_oa_location).startswith("ftp"):
-                    result = _download_wget(alternative_oa_location, filename)
+                    if result != SUCCESS_DOWNLOAD and not str(alternative_oa_location["url_for_pdf"]).startswith("ftp"):
+                        result = _download_wget(alternative_oa_location["url_for_pdf"], filename)
 
-                if result == SUCCESS_DOWNLOAD:
-                    local_entry['best_oa_location'] = alternative_oa_location
-                    break
+                    if result == SUCCESS_DOWNLOAD:
+                        local_entry['best_oa_location'] = alternative_oa_location
+                        break
 
     if os.path.isfile(filename) and filename.endswith(".tar.gz"):
         _manage_pmc_archives(filename)
@@ -1253,9 +1220,177 @@ def _download_ftp(url, filename):
         logging.exception("Download failed for {0} with ftp adapter".format(url))
     return result
 
+def _download_arxiv(url, filename, local_entry, config= None):
+    global biblio_glutton_url
+    global crossref_base
+    global crossref_email
+    global global_config
+    global s3_arxiv
+    global swift_arxiv
+
+    if config == None:
+        config = global_config
+
+    result = FAIL_DOWNLOAD
+
+    #print("_download_arxiv", url)
+
+    # PDF
+    arxiv_url_pdf = arxiv_url_to_path(url, ext='.pdf.gz')
+    #print("arxiv_url_pdf:", arxiv_url_pdf)
+    # we are using S3 or Swift at this stage
+    pdf_file_path = None
+    if s3_arxiv != None:
+        pdf_file_path = s3_arxiv.download_file(arxiv_url_pdf, filename)
+    elif swift_arxiv != None:
+        pdf_file_path = swift_arxiv.download_file(arxiv_url_pdf, filename)
+    else:
+        logging.error("S3/Swift settings for accessing arXiv mirror are not valid")
+
+    if pdf_file_path != None:
+        #print("download successful: ", pdf_file_path)
+        result = SUCCESS_DOWNLOAD
+
+        # arXiv metadata, only if PDF succeeded 
+        arxiv_url_json = arxiv_url_to_path(url, ext='.json.gz')
+        #print("arxiv_url_json:", arxiv_url_json)
+        
+        # load downloaded arxiv_record json
+        json_filename = filename.replace(".pdf", ".json")
+        json_file_path = None
+        if s3_arxiv != None:
+            json_file_path = s3_arxiv.download_file(arxiv_url_json, json_filename)
+        elif swift_arxiv != None:
+            json_file_path = swift_arxiv.download_file(arxiv_url_json, json_filename)
+        else:
+            logging.error("S3/Swift settings for accessing arXiv mirror are not valid")
+
+        if json_file_path != None:
+            #print("download successful: ", json_filename)
+
+            try:
+                arxiv_record = json.load(json_file_path)
+                if arxiv_record != None:
+                    local_entry["arxiv"] = arxiv_record
+            except:
+                logging.error("arXiv json metadata file does not seem to be valid: " + json_file_path)
+
+        # LaTeX sources, only if PDF succeeded
+        arxiv_url_sources = arxiv_url_to_path(url, sources=True, ext='.zip')
+        source_filename = filename.replace(".pdf", ".zip")
+        source_file_path = None
+        #print("arxiv_url_sources", arxiv_url_sources)
+        if s3_arxiv != None:
+            source_file_path =s3_arxiv.download_file(arxiv_url_sources, source_filename)
+        elif swift_arxiv != None:
+            source_file_path = swift_arxiv.download_file(arxiv_url_sources, source_filename)
+        else:
+            logging.error("S3/Swift settings for accessing arXiv mirror are not valid")
+
+        '''
+        if source_file_path != None:
+            # source file will be managed with the other files
+            print("download successful: ", source_filename)
+        '''
+
+    if biblio_glutton_url != None:
+        if "doi" in local_entry:
+            local_doi = local_entry['doi']
+        if "arxiv" in local_entry and "doi" in local_entry["arxiv"]:
+            local_doi = local_entry["arxiv"]['doi']
+        local_pmcid = None
+        if "pmicd" in local_entry:
+            local_pmcid = local_entry['pmicd']
+        local_pmid = None
+        if "pmid" in local_entry:
+            local_pmid = local_entry['pmid']
+        glutton_record = _biblio_glutton_lookup(biblio_glutton_url,
+                                                doi=local_doi,
+                                                pmcid=local_pmcid,
+                                                pmid=local_pmid,
+                                                crossref_base= crossref_base, 
+                                                crossref_email=crossref_email)
+        if glutton_record != None:
+            local_entry["glutton"] = glutton_record
+            if not "doi" in local_entry and "doi" in glutton_record:
+                local_entry["doi"] = glutton_record["doi"]
+            if not "pmid" in local_entry and "pmid" in glutton_record:
+                local_entry["pmid"] = glutton_record["pmid"]
+            if not "pmcid" in local_entry and "pmcid" in glutton_record:
+                local_entry["pmcid"] = glutton_record["pmcid"]    
+            if not "istexId" in local_entry and "istexId" in glutton_record:
+                local_entry["istexId"] = glutton_record["istexId"]
+
+    return result, local_entry
+
+def _download_plos_extra(url, filename, local_entry, config=None):
+    global s3_plos
+    global swift_plos
+
+    """
+    Download extra files from PLOS mirror: JATS full text, TEI full text, existing software mentions
+    """
+
+    result = FAIL_DOWNLOAD
+    
+    print("_download_plos", url)
+    plos_id = None
+    # JATS file 
+    try:
+        plos_id = plos_url_to_path(url, local_entry)
+        print("plos_id:", plos_id)
+    except:
+        logging.error("Could not extract PLOS ID from url: " + url)
+
+    if plos_id != None:
+        plos_url_jats = os.path.join("jats", plos_id+".xml")
+        jats_filename = filename.replace(".pdf", ".jats.xml")
+        jats_file_path = None
+        if s3_plos != None:
+            jats_file_path =s3_plos.download_file(plos_url_jats, jats_filename)
+        elif swift_plos != None:
+            jats_file_path = swift_plos.download_file(plos_url_jats, jats_filename)
+        else:
+            logging.error("S3/Swift settings for accessing plos mirror are not valid")
+
+        if jats_file_path != None:
+            print("download successful: ", jats_filename)
+            result = SUCCESS_DOWNLOAD
+
+            # if successful, we download TEI and software mention files as extra
+            plos_url_tei = os.path.join("tei", plos_id+".pub2tei.tei.xml")
+            tei_filename = filename.replace(".pdf", ".pub2tei.tei.xml")
+            tei_file_path = None
+            if s3_plos != None:
+                tei_file_path =s3_plos.download_file(plos_url_tei, tei_filename)
+            elif swift_plos != None:
+                tei_file_path = swift_plos.download_file(plos_url_tei, tei_filename)
+            else:
+                logging.error("S3/Swift settings for accessing plos mirror are not valid")
+
+            if tei_file_path != None:
+                print("download successful: ", tei_filename)
+
+            plos_url_software = os.path.join("software", plos_id+".software.json")
+            software_filename = filename.replace(".pdf", ".software.json")
+            software_file_path = None
+            if s3_plos != None:
+                software_file_path =s3_plos.download_file(plos_url_software, software_filename)
+            elif swift_plos != None:
+                software_file_path = swift_plos.download_file(plos_url_software, software_filename)
+            else:
+                logging.error("S3/Swift settings for accessing plos mirror are not valid")
+
+            if software_file_path != None:
+                print("download successful: ", software_filename)
+
+    return result, local_entry
+
 def _check_compression(file):
     '''
-    check if a file is compressed, if yes decompress and replace by the decompressed version
+    Check if a file is GZIP compressed, if yes decompress and replace by the decompressed version.
+    This is only covering GZIP files, because tar and zip files are handled differently to manage
+    group of files. 
     '''
     if os.path.isfile(file):
         if os.path.getsize(file) == 0:
@@ -1432,11 +1567,18 @@ def _create_map_entry(local_entry):
 
     map_entry["resources"] = resources
 
+    # add license information if available
+    if "license" in local_entry and local_entry["license"] and len(local_entry["license"])>0:
+        map_entry["license"] = local_entry["license"]
+
     # add target OA link
     if 'best_oa_location' in local_entry and 'url_for_pdf' in local_entry['best_oa_location']:
         pdf_url = local_entry['best_oa_location']['url_for_pdf']
         if pdf_url is not None:    
             map_entry["oa_link"] = pdf_url
+            # force license to arXiv license
+            if pdf_url.find("arxiv.org") != -1:
+                map_entry["license"] = "arXiv"
 
     return map_entry
 
@@ -1471,6 +1613,30 @@ def _load_config(config_file='./config.yaml'):
 
     return configuration    
 
+def _arxiv_mirror(local_config):
+    """
+    Return true if a arxiv mirror is defined in the configuration 
+    """
+    if "arxiv" in local_config["resources"] and "s3" in local_config["resources"]["arxiv"]:
+        if "arxiv_bucket_name" in local_config["resources"]["arxiv"]["s3"] and local_config["resources"]["arxiv"]["s3"]["arxiv_bucket_name"] and len(local_config["resources"]["arxiv"]["s3"]["arxiv_bucket_name"])>0:
+            return True
+    if "arxiv" in local_config["resources"] and "swift" in local_config["resources"]["arxiv"]:
+        if "arxiv_swift_container" in local_config["resources"]["arxiv"]["swift"] and local_config["resources"]["arxiv"]["swift"]["arxiv_swift_container"] and len(local_config["resources"]["arxiv"]["swift"]["arxiv_swift_container"])>0:
+            return True
+    return False
+
+def _plos_mirror(local_config):
+    """
+    Return true if a los mirror is defined in the configuration 
+    """
+    if "plos" in local_config["resources"] and "s3" in local_config["resources"]["plos"]:
+        if "plos_bucket_name" in local_config["resources"]["plos"]["s3"] and local_config["resources"]["plos"]["s3"]["plos_bucket_name"] and len(local_config["resources"]["plos"]["plos"]["plos_bucket_name"])>0:
+            return True
+    if "plos" in local_config["resources"] and "swift" in local_config["resources"]["plos"]:
+        if "plos_swift_container" in local_config["resources"]["plos"]["swift"] and local_config["resources"]["plos"]["swift"]["plos_swift_container"] and len(local_config["resources"]["plos"]["swift"]["plos_swift_container"])>0:
+            return True
+    return False
+
 def arxiv_url_to_path(url, sources=False, ext='.pdf'):
     """
     In order to access to an arXiv PDF via a mirror path based on the requested arXiv PDF URL
@@ -1488,7 +1654,7 @@ def arxiv_url_to_path(url, sources=False, ext='.pdf'):
     except:
         logging.exception("Incorrect arXiv url format, could not extract path")
 
-def plos_url_to_path(url, ext='.xml'):
+def plos_url_to_path(url, local_entry):
     """
     In order to access to PLOS JATS and TEI XML via a mirror path based on the requested PLOS PDF URL
     To create the mirror, the bulk allOfPLOS archive with all JATS XML is available from PLOS 
@@ -1504,6 +1670,18 @@ def plos_url_to_path(url, ext='.xml'):
         return _id
     except:
         logging.exception("Incorrect PLOS PDF url format, could not extract path")
+
+    if not "doi" in local_entry:
+        return None 
+
+    try:
+        print(local_entry["doi"])
+        _id = re.findall(r"10\.1371\/(.*)", local_entry["doi"])[0]
+        return _id
+    except:
+        logging.exception("Incorrect PLOS PDF url format, could not extract path")
+
+    return None
 
 def test():
     harvester = OAHarvester()

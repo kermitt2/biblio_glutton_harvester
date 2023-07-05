@@ -15,7 +15,7 @@ batch_size: 100
 # and how to access the mirrors if on a S3 compatible storage 
 resources:
     pmc:
-        prioritize_pmc: true,
+        prioritize_pmc: true
         pmc_base: "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/"
     arxiv:
         s3:
