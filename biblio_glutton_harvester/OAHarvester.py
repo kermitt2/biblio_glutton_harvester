@@ -1261,11 +1261,11 @@ def _download_arxiv(url, filename, local_entry, config= None):
 
         if json_file_path != None:
             #print("download successful: ", json_filename)
-
             try:
-                arxiv_record = json.load(json_file_path)
-                if arxiv_record != None:
-                    local_entry["arxiv"] = arxiv_record
+                with open(json_file_path, "r") as j_file:
+                    arxiv_record = json.load(j_file)
+                    if arxiv_record != None:
+                        local_entry["arxiv"] = arxiv_record
             except:
                 logging.error("arXiv json metadata file does not seem to be valid: " + json_file_path)
 
@@ -1567,11 +1567,13 @@ def _create_map_entry(local_entry):
 
     # add target OA link
     if 'best_oa_location' in local_entry and 'url_for_pdf' in local_entry['best_oa_location']:
+        if "license" in local_entry['best_oa_location'] and local_entry['best_oa_location']["license"] and len(local_entry['best_oa_location']["license"])>0:
+            map_entry["license"] = local_entry['best_oa_location']["license"]
         pdf_url = local_entry['best_oa_location']['url_for_pdf']
         if pdf_url is not None:    
             map_entry["oa_link"] = pdf_url
             # force license to arXiv license
-            if pdf_url.find("arxiv.org") != -1:
+            if pdf_url.find("arxiv.org") != -1 and "license" not in map_entry:
                 map_entry["license"] = "arXiv"
 
     return map_entry
@@ -1704,7 +1706,7 @@ if __name__ == "__main__":
 
     config = _load_config(config_path)
 
-    print(config)
+    #print(config)
 
     # some global variables
     if "metadata" in config and "biblio_glutton_base" in config["metadata"] and config["metadata"]["biblio_glutton_base"] and len(config["metadata"]["biblio_glutton_base"].strip())>0:

@@ -29,8 +29,8 @@ class Swift(object):
                     for item in page["listing"]:
                         i_name = item["name"]
                         container_names.append(i_name)
-                        if i_name == self.config["swift_container"]:
-                            print("using SWIFT", self.config["swift_container"], "container:", item)
+                        #if i_name == self.config["swift_container"]:
+                        #    print("using SWIFT", self.config["swift_container"], "container:", item)
                 else:
                     logging.error("error listing SWIFT object storage containers")
 
