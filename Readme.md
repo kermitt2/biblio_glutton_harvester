@@ -222,6 +222,30 @@ Depending on the config, the resources can be accessed either locally under `dat
 
 Only entries available in Open Access according to Unpaywall or PMC are present in the JSONL map file. If an entry is present in the JSONL map file but without a full text resource (`"pdf"` or "`"xml"`), it means that the harvesting of the Open Access file has failed. 
 
+## Converting the PMC XML JATS files into XML TEI
+
+After the harvesting realised by `biblio_glutton_harvester.OAHarvester`, it is possible to convert efficiently of downloaded PMC XML JATS files into XML TEI. This will provide better XML quality than what can be extracted automatically by Grobid from the PDF. This conversion allows to have all the documents in the same XML TEI customization format. As the TEI format superseeds JATS, there is no loss of information from the JATS file. It requires [Pub2TEI](https://github.com/kermitt2/Pub2TEI) to be installed and the path to Pub2TEI `pub2tei_path` to be set in the `config.yaml` file of the `biblio_glutton_harvester` project.
+
+To launch the conversion under the default `data/` directory:
+
+```console
+python3 -m biblio_glutton_harvester.nlm2tei
+```
+
+If a custom config file and custom `data/` path are used:
+
+```console
+python3 -m biblio_glutton_harvester.nlm2tei --config ./my_config.yaml
+```
+
+This will apply Pub2TEI (a set of XSLT) to all the harvested `*.nxml` files and add to the document repository a new file TEI file, for instance for a CORD-19 entry:
+
+```
+00/0a/je/vz/000ajevz/000ajevz.pub2tei.tei.xml
+```
+
+Note that Pub2TEI supports a lot of other publisher's XML formats (and variants of these formats), so the principle and current tool could be used to transform different publisher XML formats into a single one (TEI) - not just NLM/JATS, facilitating and centralizing further ingestion and process by avoiding to write complicated XML parsers for each case. 
+
 ## Troubleshooting with imagemagick
 
 A relatively recent update (end of October 2018) of imagemagick is breaking the normal conversion usage. Basically the converter does not convert by default for security reason related to server usage. For non-server mode as involved in our module, it is not a problem to allow PDF conversion. For this, simply edit the file 

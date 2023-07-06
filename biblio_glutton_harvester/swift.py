@@ -14,8 +14,9 @@ logging.basicConfig(filename='harvester.log', filemode='w', level=logging.DEBUG)
 
 class Swift(object):
     
-    def __init__(self, config):
+    def __init__(self, config, data_path="./data/"):
         self.config = config
+        self.data_path = data_path
 
         options = self._init_swift_options()
         options['object_uu_threads'] = 20
@@ -124,7 +125,7 @@ class Swift(object):
             'no_download': False,
             'header': [],
             'skip_identical': False,
-            'out_directory': './data/',
+            'out_directory': self.data_path,
             'checksum': True,
             'out_file': None,
             'remove_prefix': True,

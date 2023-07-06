@@ -91,7 +91,7 @@ class OAHarvester(object):
 
         self.swift = None
         if "swift" in self.config and self.config["swift"] and len(self.config["swift"])>0 and "swift_container" in self.config["swift"] and self.config["swift"]["swift_container"] and len(self.config["swift"]["swift_container"])>0:
-            self.swift = swift.Swift(self.config["swift"])
+            self.swift = swift.Swift(self.config["swift"], data_path=self.config["data_path"])
 
         # arxiv minor, either S3 compatible storage or Swift OpenStack
         if _arxiv_mirror(self.config):
@@ -102,7 +102,7 @@ class OAHarvester(object):
             elif "swift" in self.config["resources"]["arxiv"] and "arxiv_swift_container" in self.config["resources"]["arxiv"]["swift"] and self.config["resources"]["arxiv"]["swift"]["arxiv_swift_container"] and len(self.config["resources"]["arxiv"]["swift"]["arxiv_swift_container"])>0:
                 # arvix mirror is deployed as an OpenStack Swift object storage
                 self.config["resources"]["arxiv"]["swift"]["swift_container"] = config["resources"]["arxiv"]["swift"]["arxiv_swift_container"]
-                swift_arxiv = swift.Swift(self.config["resources"]["arxiv"]["swift"])
+                swift_arxiv = swift.Swift(self.config["resources"]["arxiv"]["swift"], data_path=self.config["data_path"])
 
         # plos mirror, either S3 compatible storage or Swift OpenStack
         if _plos_mirror(self.config):
@@ -113,7 +113,7 @@ class OAHarvester(object):
             elif "swift" in self.config["resources"]["plos"] and "plos_swift_container" in self.config["resources"]["plos"]["swift"] and self.config["resources"]["plos"]["swift"]["plos_swift_container"] and len(self.config["resources"]["plos"]["swift"]["plos_swift_container"])>0:
                 # plos mirror is deployed as an Openstack Swift object storage
                 self.config["resources"]["plos"]["swift"]["swift_container"] = config["resources"]["plos"]["swift"]["plos_swift_container"]
-                swift_plos = swift.Swift(self.config["resources"]["plos"]["swift"])
+                swift_plos = swift.Swift(self.config["resources"]["plos"]["swift"], data_path=self.config["data_path"])
 
     def _init_lmdb(self):
         # create the data path if it does not exist 

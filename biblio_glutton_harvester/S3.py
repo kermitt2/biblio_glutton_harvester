@@ -7,16 +7,15 @@ import logging
 import logging.handlers
 logging.basicConfig(filename='harvester.log', filemode='w', level=logging.DEBUG)
 
-from biblio_glutton_harvester.OAHarvester import _check_compression
-
 '''
 Note: we probably should manage retry
 '''
 
 class S3(object):
     
-    def __init__(self, config):
+    def __init__(self, config, data_path="./data/"):
         self.config = config
+        self.data_path = data_path
         if self.config['region'] is not None:
             region = self.config['region']
         else:
@@ -85,10 +84,11 @@ class S3(object):
         try:
             s3_client.download_file(self.bucket_name, file_path, dest_path)
             # decompress if required
+            '''
             result_compression = _check_compression(dest_path)
             if not result_compression:
                 logging.error("decompression failed for " + dest_path)
-
+            '''
         except Exception:
             logging.exception("Could not download file: " + file_path)
             return None

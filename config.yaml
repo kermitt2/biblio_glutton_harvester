@@ -5,6 +5,10 @@
 # this local directory will also be used to store the harvested data.
 data_path: "./data"
 
+# to convert downloaded NLM files into TEI, install Pub2TEI and indicate
+# the install path here
+pub2tei_path: ~
+
 # if true, gzip compression of the store object
 compression: true
 
