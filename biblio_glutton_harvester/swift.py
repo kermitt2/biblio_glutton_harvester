@@ -113,7 +113,7 @@ class Swift(object):
         """
         Download a file given a path and returns the download destination file path.
         """
-        print("download_file:", file_path, dest_path)
+        #print("download_file:", file_path, dest_path)
 
         prefix = os.path.dirname(file_path)
         outfile = os.path.basename(dest_path)
@@ -144,8 +144,6 @@ class Swift(object):
                     if not result_compression:
                         logging.error("decompression failed for " + local_path)
                     else:
-                        #print(local_path)
-                        #print(dest_path)
                         shutil.move(local_path, dest_path)
                 else:
                     logging.error("'%s' download failed" % down_res['object'])

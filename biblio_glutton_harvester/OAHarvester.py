@@ -1018,8 +1018,6 @@ def _download(url, filename, local_entry, config=None):
     if config == None:
         config = global_config
 
-    print("_download", url)
-
     # check mirror resources
     if url.find("arxiv.org") != -1 and config != None and _arxiv_mirror(config):
         # use arxiv mirror for getting the PDF, arXiv metadata (they will be added to the local_entry dict
@@ -1233,11 +1231,8 @@ def _download_arxiv(url, filename, local_entry, config= None):
 
     result = FAIL_DOWNLOAD
 
-    #print("_download_arxiv", url)
-
     # PDF
     arxiv_url_pdf = arxiv_url_to_path(url, ext='.pdf.gz')
-    #print("arxiv_url_pdf:", arxiv_url_pdf)
     # we are using S3 or Swift at this stage
     pdf_file_path = None
     if s3_arxiv != None:
@@ -1253,7 +1248,6 @@ def _download_arxiv(url, filename, local_entry, config= None):
 
         # arXiv metadata, only if PDF succeeded 
         arxiv_url_json = arxiv_url_to_path(url, ext='.json.gz')
-        #print("arxiv_url_json:", arxiv_url_json)
         
         # load downloaded arxiv_record json
         json_filename = filename.replace(".pdf", ".json")
@@ -1279,7 +1273,6 @@ def _download_arxiv(url, filename, local_entry, config= None):
         arxiv_url_sources = arxiv_url_to_path(url, sources=True, ext='.zip')
         source_filename = filename.replace(".pdf", ".zip")
         source_file_path = None
-        #print("arxiv_url_sources", arxiv_url_sources)
         if s3_arxiv != None:
             source_file_path =s3_arxiv.download_file(arxiv_url_sources, source_filename)
         elif swift_arxiv != None:
@@ -1330,15 +1323,13 @@ def _download_plos_extra(url, filename, local_entry, config=None):
     """
     Download extra files from PLOS mirror: JATS full text, TEI full text, existing software mentions
     """
-
     result = FAIL_DOWNLOAD
     
-    print("_download_plos", url)
+    #print("_download_plos", url)
     plos_id = None
     # JATS file 
     try:
         plos_id = plos_url_to_path(url, local_entry)
-        print("plos_id:", plos_id)
     except:
         logging.error("Could not extract PLOS ID from url: " + url)
 
@@ -1354,7 +1345,7 @@ def _download_plos_extra(url, filename, local_entry, config=None):
             logging.error("S3/Swift settings for accessing plos mirror are not valid")
 
         if jats_file_path != None:
-            print("download successful: ", jats_filename)
+            #print("download successful: ", jats_filename)
             result = SUCCESS_DOWNLOAD
 
             # if successful, we download TEI and software mention files as extra
@@ -1368,8 +1359,10 @@ def _download_plos_extra(url, filename, local_entry, config=None):
             else:
                 logging.error("S3/Swift settings for accessing plos mirror are not valid")
 
+            '''
             if tei_file_path != None:
                 print("download successful: ", tei_filename)
+            '''
 
             plos_url_software = os.path.join("software", plos_id+".software.json")
             software_filename = filename.replace(".pdf", ".software.json")
@@ -1381,9 +1374,10 @@ def _download_plos_extra(url, filename, local_entry, config=None):
             else:
                 logging.error("S3/Swift settings for accessing plos mirror are not valid")
 
+            '''
             if software_file_path != None:
                 print("download successful: ", software_filename)
-
+            '''
     return result, local_entry
 
 def _check_compression(file):
