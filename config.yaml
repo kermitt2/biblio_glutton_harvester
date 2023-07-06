@@ -1,0 +1,64 @@
+# Configuration of the biblio_glutton_harvester
+
+# where to put locally the data, it will store the lmdb keeping track of
+# the advancement of the harvesting. If no other cloud storage is defined,
+# this local directory will also be used to store the harvested data.
+data_path: "./data"
+
+# if true, gzip compression of the store object
+compression: true
+
+# max parallel tasks (download, storage, compression, validation, ...)
+batch_size: 100
+
+# how to access resources, mirrors of dump not accessible at file-level
+# and how to access the mirrors if on a S3 compatible storage 
+resources:
+    pmc:
+        prioritize_pmc: true
+        pmc_base: "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/"
+    arxiv:
+        s3:
+            arxiv_bucket_name: ~
+            aws_access_key_id: ~
+            aws_secret_access_key: ~
+            region: ~
+            aws_end_point: ~
+    plos:
+        s3:
+            plos_bucket_name: ~
+            aws_access_key_id: ~
+            aws_secret_access_key: ~
+            region: ~
+            aws_end_point: ~
+
+# metadat services to use to retrieve metadata
+metadata:
+    biblio_glutton_base: ~
+    crossref_base: "https://api.crossref.org"
+    crossref_email: ~
+
+# storage on S3 compatible object storage
+aws:
+    aws_access_key_id: ~
+    aws_secret_access_key: ~
+    bucket_name: ~
+    region: ~
+    aws_end_point: ~
+
+# storage on OpenStack Swift object storage
+swift:
+    swift_container: ~
+    swift_parameters: 
+        auth_version: "3"
+        auth_url: ~
+        user: ~
+        os_username: ~
+        os_password: ~
+        key: ~
+        os_user_domain_name: "Default"
+        os_project_domain_name: "Default"
+        os_project_name: ~
+        os_project_id: ~
+        os_region_name: ~
+        os_auth_url: ~

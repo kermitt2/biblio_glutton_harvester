@@ -5,6 +5,8 @@ import shutil
 from swiftclient.multithreading import OutputManager
 from swiftclient.service import SwiftError, SwiftService, SwiftUploadObject
 
+from biblio_glutton_harvester.OAHarvester import _check_compression
+
 # logging
 import logging
 import logging.handlers
@@ -45,9 +47,14 @@ class Swift(object):
 
     def _init_swift_options(self):
         options = {}
-        for key in self.config["swift"]:
-            if len(self.config["swift"][key].strip())>0:
-                options[key] = self.config["swift"][key]
+        if "swift_parameters" in self.config:
+            for key in self.config["swift_parameters"]:
+                if len(self.config["swift_parameters"][key].strip())>0:
+                    options[key] = self.config["swift_parameters"][key]
+        else:
+            for key in self.config:
+                if len(self.config[key].strip())>0:
+                    options[key] = self.config[key]
         return options
 
     def upload_file_to_swift(self, file_path, dest_path=None):
@@ -106,18 +113,46 @@ class Swift(object):
         """
         Download a file given a path and returns the download destination file path.
         """
+        #print("download_file:", file_path, dest_path)
+
+        prefix = os.path.dirname(file_path)
+        outfile = os.path.basename(dest_path)
+        opts = {
+            'yes_all': False,
+            'marker': '',
+            'prefix': prefix,
+            'no_download': False,
+            'header': [],
+            'skip_identical': False,
+            'out_directory': './data/',
+            'checksum': True,
+            'out_file': None,
+            'remove_prefix': True,
+            'shuffle' : False
+        }
+
         objs = [ file_path ]
         try:
-            for down_res in self.swift.download(container=self.config["swift_container"], objects=objs):
+            for down_res in self.swift.download(container=self.config["swift_container"], objects=objs, options=opts):
+                #print(down_res)
                 if down_res['success']:
                     #print("'%s' downloaded" % down_res['object'])
                     local_path = down_res['path']
-                    #print(local_path)
-                    shutil.move(local_path, dest_path)
+
+                    # decompress if required
+                    result_compression = _check_compression(local_path)
+                    if not result_compression:
+                        logging.error("decompression failed for " + local_path)
+                    else:
+                        shutil.move(local_path, dest_path)
                 else:
                     logging.error("'%s' download failed" % down_res['object'])
+                    return None
         except SwiftError:
             logging.exception("error downloading file from SWIFT container")
+            return None
+
+        return os.path.join(dest_path)
 
     def get_swift_list(self, dir_name=None):
         """

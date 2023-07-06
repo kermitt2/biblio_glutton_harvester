@@ -1,14 +1,16 @@
 import os
 from boto3 import client
+import botocore
 
 # logging
 import logging
 import logging.handlers
 logging.basicConfig(filename='harvester.log', filemode='w', level=logging.DEBUG)
 
+from biblio_glutton_harvester.OAHarvester import _check_compression
+
 '''
-Note: at this stage, this is quick and dirty... 
-we should examine the response object and properly raise exceptions and manage retry
+Note: we probably should manage retry
 '''
 
 class S3(object):
@@ -20,7 +22,18 @@ class S3(object):
         else:
             region = "us-west-2"
         self.bucket_name = self.config['bucket_name']
-        self.conn = client('s3', 
+
+        if 'aws_end_point' in self.config and len(self.config['aws_end_point'])>1:
+            # for non-AWS S3 compatible storage, e.g. OVHCloud
+            end_point = self.config['aws_end_point']
+            self.conn = client('s3', 
+                            endpoint_url=end_point,
+                            region_name=region, 
+                            aws_access_key_id=self.config['aws_access_key_id'],
+                            aws_secret_access_key=self.config['aws_secret_access_key'])
+        else:
+            # default AWS
+            self.conn = client('s3', 
                             region_name=region, 
                             aws_access_key_id=self.config['aws_access_key_id'],
                             aws_secret_access_key=self.config['aws_secret_access_key'])
@@ -59,18 +72,55 @@ class S3(object):
         """
         Download a file given a S3 path and returns the download file path.
         """
-        s3_client = self.conn
-        file_name = os.path.basename(file_path)
 
-        if not os.path.exists(dest_path):
-            os.makedirs(dest_path)
+        #it_exists = self.s3_object_exists(file_path)
+        #print(file_path+":", str(it_exists))
+
+        s3_client = self.conn
+        #file_name = os.path.basename(file_path)
+        dir_name = os.path.dirname(dest_path)
+
+        if not os.path.exists(dir_name):
+            os.makedirs(dir_name)
         try:
             s3_client.download_file(self.bucket_name, file_path, dest_path)
-        except:
-            logging.error('Could not download file: ' + file_path)
+            # decompress if required
+            result_compression = _check_compression(dest_path)
+            if not result_compression:
+                logging.error("decompression failed for " + dest_path)
+
+        except Exception:
+            logging.exception("Could not download file: " + file_path)
             return None
         
-        return os.path.join(dest_path, filename)
+        return os.path.join(dest_path)
+
+    def s3_object_exists(self, key):
+        """
+        Returns true if the S3 key is in the S3 bucket
+        """
+        s3_client = self.conn
+        key_exists = True
+        try:
+            content = s3_client.head_object(Bucket=self.bucket_name, Key=key)
+        except botocore.exceptions.ClientError as e:
+            if e.response['Error']['Code'] == "404":
+                # The object does not exist.
+                key_exists = False
+            else:
+                # Something else has gone wrong.
+                raise e
+        return key_exists
+
+    def list_bucket_objects(self, bucket):
+        s3_client = self.conn
+        try:
+            response = s3_client.list_objects_v2(Bucket=bucket, MaxKeys=10)
+            #print(response)
+        except ClientError as error:
+            # Put your error handling logic here
+            raise ValueError("Unable to list bucket objects.")
+        pass
 
     def get_s3_list(self, dir_name):
         """
