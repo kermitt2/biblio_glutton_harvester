@@ -1270,7 +1270,7 @@ def _download_arxiv(url, filename, local_entry, config= None):
                 logging.error("arXiv json metadata file does not seem to be valid: " + json_file_path)
 
         # LaTeX sources, only if PDF succeeded
-        arxiv_url_sources = arxiv_url_to_path(url, sources=True, ext='.zip')
+        arxiv_url_sources = arxiv_url_to_path(url, ext='.zip')
         source_filename = filename.replace(".pdf", ".zip")
         source_file_path = None
         if s3_arxiv != None:
@@ -1283,7 +1283,9 @@ def _download_arxiv(url, filename, local_entry, config= None):
         '''
         if source_file_path != None:
             # source file will be managed with the other files
-            print("download successful: ", source_filename)
+            print("download source successful: ", source_filename)
+        else:
+            print("download source unsuccessful: ", arxiv_url_sources, source_filename)
         '''
 
     if biblio_glutton_url != None:
@@ -1633,7 +1635,7 @@ def _plos_mirror(local_config):
             return True
     return False
 
-def arxiv_url_to_path(url, sources=False, ext='.pdf'):
+def arxiv_url_to_path(url, ext='.pdf'):
     """
     In order to access to an arXiv PDF via a mirror path based on the requested arXiv PDF URL
     See https://github.com/kermitt2/arxiv_harvester to create the mirror
@@ -1643,10 +1645,7 @@ def arxiv_url_to_path(url, sources=False, ext='.pdf'):
         prefix = "arxiv" if _id[0].isdigit() else _id.split('/')[0]
         filename = url.split('/')[-1]
         yymm = filename[:4]
-        if sources:
-            return '/'.join([prefix, yymm, filename, "sources", filename + ext])
-        else:
-            return '/'.join([prefix, yymm, filename, filename + ext])
+        return '/'.join([prefix, yymm, filename, filename + ext])
     except:
         logging.exception("Incorrect arXiv url format, could not extract path")
 
@@ -1719,7 +1718,10 @@ if __name__ == "__main__":
     harvester = OAHarvester(config=config, thumbnail=thumbnail, sample=sample)
 
     if reset:
-        harvester.reset()
+        if input("\nYou asked to reset the existing harvesting, this will removed all the already downloaded data files and reinitialize the harvesting from the beginning... are you sure? (y/n) ") == "y":
+            harvester.reset()
+        else:
+            print("skipping reset...")
 
     start_time = time.time()
 
