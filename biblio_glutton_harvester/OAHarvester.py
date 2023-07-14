@@ -773,7 +773,7 @@ class OAHarvester(object):
                 if txn.get(key) is None:
                     continue
                 map_entry = _deserialize_pickle(txn.get(key))
-                map_entry["id"] = key.decode(encoding='UTF-8');
+                map_entry["id"] = key.decode(encoding='UTF-8')
 
                 json_local_entry = json.dumps(map_entry)
                 file_out.write(json_local_entry)

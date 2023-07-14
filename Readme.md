@@ -64,10 +64,10 @@ apt-get install imagemagick
 
 ### Using PyPI package
 
-PyPI packages are available for stable versions. Latest stable version is `0.2.0`:
+PyPI packages are available for stable versions. Latest stable version is `0.2.3`:
 
 ```
-python3 -m pip install biblio_glutton_harvester==0.2.0
+python3 -m pip install biblio_glutton_harvester==0.2.3
 ```
 
 ## Configuration
