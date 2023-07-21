@@ -246,6 +246,28 @@ This will apply Pub2TEI (a set of XSLT) to all the harvested `*.nxml` files and 
 
 Note that Pub2TEI supports a lot of other publisher's XML formats (and variants of these formats), so the principle and current tool could be used to transform different publisher XML formats into a single one (TEI) - not just NLM/JATS, facilitating and centralizing further ingestion and process by avoiding to write complicated XML parsers for each case. 
 
+## Converting the LaTeX source files into XML TEI
+
+After the harvesting realised by `biblio_glutton_harvester.OAHarvester`, it is possible to convert the downloaded LaTeX source files into XML TEI. These source files come typically from arXiv. This will provide better XML quality than what can be extracted automatically by Grobid from the PDF. This conversion allows to have all the documents in the same XML TEI customization format. For best TEI conformance, it requires the forked [LaTeXML](https://github.com/kermitt2/LaTeXML) to be installed and the path to LaTeXML `latexml_path` to be set in the `config.yaml` file of the `biblio_glutton_harvester` project.
+
+To launch the conversion under the default `data/` directory:
+
+```console
+python3 -m biblio_glutton_harvester.latex2tei
+```
+
+If a custom config file and custom `data/` path are used:
+
+```console
+python3 -m biblio_glutton_harvester.latex2tei --config ./my_config.yaml
+```
+
+This will apply LaTeXML to all the harvested `*.zip` files, examine the `.tex` files, identify the root latex file, convert and finally add the converted TEI XML file in the document repository, similarly as other resources. The extension for TEI XML files generated from the LaTeX source is `.latex.tei.xml`, for example:
+
+```
+ea/53/8f/ec/ea538fec-f7ec-4119-bcab-7362a47b31b6/ea538fec-f7ec-4119-bcab-7362a47b31b6.latex.tei.xml
+```
+
 ## Troubleshooting with imagemagick
 
 A relatively recent update (end of October 2018) of imagemagick is breaking the normal conversion usage. Basically the converter does not convert by default for security reason related to server usage. For non-server mode as involved in our module, it is not a problem to allow PDF conversion. For this, simply edit the file 
