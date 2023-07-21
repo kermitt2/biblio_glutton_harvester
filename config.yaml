@@ -9,6 +9,11 @@ data_path: "./data"
 # the install path here
 pub2tei_path: ~
 
+# to convert downloaded LaTeX sources into TEI, install LaTeXML and indicate
+# the install path here (for TEI compatibility install the fork
+# https://github.com/kermitt2/LaTeXML)
+latexml_path: ~
+
 # if true, gzip compression of the store object
 compression: true
 

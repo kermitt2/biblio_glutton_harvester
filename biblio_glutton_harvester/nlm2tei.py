@@ -8,6 +8,19 @@ import json
 import time
 from biblio_glutton_harvester.OAHarvester import generateStoragePath, _load_config
 
+# logging
+import logging
+import logging.handlers
+
+logging.basicConfig(filename='harvester.log', filemode='w', level=logging.DEBUG)
+
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+logging.getLogger("urllib3").setLevel(logging.ERROR)
+
+logging.getLogger("keystoneclient").setLevel(logging.ERROR)
+logging.getLogger("swiftclient").setLevel(logging.ERROR)
+
 class Nlm2tei(object):
     """
     Convert existing NLM/JATS files (PMC) in a data repository into TEI XML format similar as Grobid output.
@@ -15,12 +28,12 @@ class Nlm2tei(object):
 
     Note: this requires a JRE 8 or more
     """
-    def __init__(self, config_path='./config.json'):
+    def __init__(self, config_path='./config.yaml'):
         self.config = _load_config(config_path)
 
         # check Pub2TEI directory indicated on the config file
         if not os.path.isdir(self.config["pub2tei_path"]):
-            print("Error: path to Pub2TEI is not valid, please clone https://github.com/kermitt2/Pub2TEI", 
+            print("Error: path to Pub2TEI is not valid, please git clone https://github.com/kermitt2/Pub2TEI", 
                   "and indicate the path to the cloned directory in the config file)")
 
         self.s3 = None
@@ -55,7 +68,7 @@ class Nlm2tei(object):
         for root, dirs, files in os.walk(self.config["data_path"]):
             for the_file in files:
                 # normally all NLM/JATS files are stored with extension .nxml, but for safety we also cover .nlm extension
-                if the_file.endswith(".nxml") or the_file.endswith(".nlm"):
+                if the_file.endswith(".nxml") or the_file.endswith(".nlm") or the_file.endswith(".nxml.xml"):
                     #print(root, the_file)
                     if not os.path.isfile(os.path.join(temp_dir,the_file)):
                         shutil.copy(os.path.join(root,the_file), temp_dir)
@@ -115,7 +128,7 @@ class Nlm2tei(object):
             return
 
         for f in os.listdir(temp_dir_out):
-            if f.endswith(".nxml.xml") or f.endswith(".nxml") or f.endswith(".nlm"):
+            if f.endswith(".nxml.xml") or f.endswith(".nxml") or f.endswith(".nlm") or f.endswith(".nlm.xml"):
                 # move the file back to its storage location (which can be S3)
                 identifier = f.split(".")[0]
                 if self.s3 is not None:
