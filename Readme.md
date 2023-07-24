@@ -222,6 +222,10 @@ Depending on the config, the resources can be accessed either locally under `dat
 
 Only entries available in Open Access according to Unpaywall or PMC are present in the JSONL map file. If an entry is present in the JSONL map file but without a full text resource (`"pdf"` or "`"xml"`), it means that the harvesting of the Open Access file has failed. 
 
+## Converting the PDF files into XML TEI
+
+[GROBID](https://github.com/kermitt2/grobid) is a service developed to structure automatically scholar PDF into XML TEI files thanks to Machine Learning techniques. First, you will need a Grobid service installed and running. We recommand using a [Docker container](https://grobid.readthedocs.io/en/latest/Grobid-docker/) to simplify the installation and deployment of the server. Second, we recommand using the [Grobid Python client](https://github.com/kermitt2/grobid_client_python) to process at scale the harvested PDF. The client will process in an efficient concurrent manner the PDF in the `data_path` directory.
+
 ## Converting the PMC XML JATS files into XML TEI
 
 After the harvesting realised by `biblio_glutton_harvester.OAHarvester`, it is possible to convert efficiently of downloaded PMC XML JATS files into XML TEI. This will provide better XML quality than what can be extracted automatically by Grobid from the PDF. This conversion allows to have all the documents in the same XML TEI customization format. As the TEI format superseeds JATS, there is no loss of information from the JATS file. It requires [Pub2TEI](https://github.com/kermitt2/Pub2TEI) to be installed and the path to Pub2TEI `pub2tei_path` to be set in the `config.yaml` file of the `biblio_glutton_harvester` project.

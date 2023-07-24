@@ -35,7 +35,7 @@ class LaTeX2tei(object):
         self.config = _load_config(config_path)
 
         # standard lmdb environment for storing biblio entries by uuid
-        self.env = None
+        #self.env = None
 
         # check LaTeXML directory indicated on the config file
         if not os.path.isdir(self.config["latexml_path"]):
@@ -51,7 +51,7 @@ class LaTeX2tei(object):
             self.swift = swift.Swift(self.config["swift"], data_path=self.config["data_path"])
 
 
-    def process(self):
+    def process(self, force=False):
         """
         Walk through the data directory, extract/examine all the .zip files to identify root latex source,
         apply the LaTeXML transformation to TEI XML. Rename the zip file to explicitely indicate that
@@ -62,6 +62,12 @@ class LaTeX2tei(object):
             for the_file in files:
                 # normally all NLM/JATS files are stored with extension .nxml, but for safety we also cover .nlm extension
                 if the_file.endswith(".zip"):
+                    # check if the TEI file has not already been generated for this source, except if the re-processing is forced
+                    # check if the TEI file has already been generated, except if we force the re-process
+                    identifier = the_file.split(".")[0]
+                    if not force and os.path.isfile(os.path.join(root,identifier+".latex.tei.xml")):
+                        continue
+
                     # unzip this thing, this is the easiest way to manage then latex files
                     directory_to_extract_to = os.path.join(self.config["data_path"], the_file.replace(".zip", "_zip_tmp"))
                     try:
@@ -95,6 +101,7 @@ class LaTeX2tei(object):
                             # update catalog following outcome of the conversion
                             local_entry = None
                             update_entry = False
+                            '''
                             with self.env.begin() as txn:
                                 local_object = txn.get(id_document.encode(encoding='UTF-8'))
                                 if local_object != None:
@@ -107,6 +114,7 @@ class LaTeX2tei(object):
                             if update_entry and local_entry != None:
                                 with self.env.begin(write=True) as txn:
                                     txn.put(id_document.encode(encoding='UTF-8'), _serialize_pickle(local_entry))
+                            '''
                     except:
                         logging.exception("Cannot unzip the archive file: " + os.path.join(root,the_file))
                     finally:
@@ -160,8 +168,14 @@ class LaTeX2tei(object):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = "Converter LaTeX document to TEI")
     parser.add_argument("--config", default="./config.yaml", help="path to the config file, default is ./config.yaml") 
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="force re-processing input files when TEI output files already exist",
+    )
     args = parser.parse_args()
     config_path = args.config
+    force = args.force
     
     nlm2tei = LaTeX2tei(config_path=config_path)
-    nlm2tei.process()
+    nlm2tei.process(force=force)

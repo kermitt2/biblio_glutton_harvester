@@ -44,7 +44,7 @@ class Nlm2tei(object):
         if "swift" in self.config and self.config["swift"] and len(self.config["swift"])>0 and "swift_container" in self.config["swift"] and self.config["swift"]["swift_container"] and len(self.config["swift"]["swift_container"])>0:
             self.swift = swift.Swift(self.config["swift"], data_path=self.config["data_path"])
 
-    def _create_batch_input(self):
+    def _create_batch_input(self, force=False):
         """
         Walk through the data directory, grab all the .nxml files and put them in a single temporary working directory
         """
@@ -70,6 +70,10 @@ class Nlm2tei(object):
                 # normally all NLM/JATS files are stored with extension .nxml, but for safety we also cover .nlm extension
                 if the_file.endswith(".nxml") or the_file.endswith(".nlm") or the_file.endswith(".nxml.xml"):
                     #print(root, the_file)
+                    # check if the TEI file has already been generated, except if we force the re-process
+                    identifier = the_file.split(".")[0]
+                    if not force and os.path.isfile(os.path.join(root,identifier+".pub2tei.tei.xml")):
+                        continue
                     if not os.path.isfile(os.path.join(temp_dir,the_file)):
                         shutil.copy(os.path.join(root,the_file), temp_dir)
 
@@ -148,12 +152,12 @@ class Nlm2tei(object):
             print("Error: %s - %s." % (e.filename, e.strerror))
         
 
-    def process(self):
+    def process(self, force=False):
         """
         Launch the conversion process
         """
         start_time = time.time()
-        temp_dir = self._create_batch_input()    
+        temp_dir = self._create_batch_input(force=force)    
         self.process_batch(temp_dir)
         self._manage_batch_results(temp_dir)  
         # TBD: consolidate raw reference string present in the converted TEI
@@ -163,8 +167,15 @@ class Nlm2tei(object):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = "Converter NLM to TEI")
     parser.add_argument("--config", default="./config.yaml", help="path to the config file, default is ./config.yaml") 
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="force re-processing input files when TEI output files already exist",
+    )
+
     args = parser.parse_args()
     config_path = args.config
+    force = args.force
     
     nlm2tei = Nlm2tei(config_path=config_path)
-    nlm2tei.process()
+    nlm2tei.process(force=force)

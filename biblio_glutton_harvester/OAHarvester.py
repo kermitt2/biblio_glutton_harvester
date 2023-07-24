@@ -77,6 +77,9 @@ class OAHarvester(object):
 
         # lmdb environment for keeping track of failures
         self.env_fail = None
+
+        # the following lmdb map gives for every PMC ID where to download the archive file containing NLM and PDF files
+        self.env_pmc_oa = None
         
         # boolean indicating if we want to generate thumbnails of front page of PDF 
         self.thumbnail = thumbnail
@@ -134,6 +137,72 @@ class OAHarvester(object):
 
         envFilePath = os.path.join(self.config["data_path"], 'fail')
         self.env_fail = lmdb.open(envFilePath, map_size=map_size)
+
+        envFilePath = os.path.join(self.config["data_path"], 'pmc_oa')
+        toBeReLoaded = False
+        if os.path.isdir(envFilePath):
+            # the lmdb for pmc_oa exists, we check if it is a valid and non-empty lmdb 
+            try: 
+                self.env_pmc_oa = lmdb.open(envFilePath, readonly=True, lock=False)
+                if self.env_pmc_oa == None:
+                    toBeReLoaded = True
+                else:
+                    with self.env_pmc_oa.begin(write=True) as txn:
+                        nb_total = txn.stat()['entries']
+                        if nb_total < 1000:
+                            toBeReLoaded = True
+            except:
+                toBeReLoaded = True
+
+        if toBeReLoaded: 
+            # build the PMC map information, in particular for downloading the archive file containing the PDF and XML 
+            # files (PDF not always present)
+            resource_file = os.path.join(self.config["data_path"], "oa_file_list.txt")
+            # TBD: if the file is not present we should download it at ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_file_list.txt
+            # https://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_file_list.txt
+            if not os.path.isfile(resource_file):
+                url = "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_file_list.txt"
+                logging.info("Downloading PMC resource file: " + url)
+                print("Downloading PMC resource file: " + url + " (done only at first launch... hold on...)")
+                _download_wget(url, resource_file)
+
+            if os.path.isfile(resource_file) and not os.path.isdir(envFilePath):
+                # open in write mode
+                self.env_pmc_oa = lmdb.open(envFilePath, map_size=map_size)
+                txn = self.env_pmc_oa.begin(write=True)
+
+                nb_lines = 0
+                # get number of line in the file
+                with open(resource_file, "r") as fp:
+                    for line in fp:
+                        nb_lines += 1
+
+                # fill this lmdb map
+                print("building PMC resource map - done only one time")
+                with open(resource_file, "r") as fp:
+                    count = 0
+                    for line in tqdm(fp, total=nb_lines):
+                        if count == 0:
+                            #skip first line which is just a time stamp
+                            count += 1
+                            continue
+                        row = line.split('\t')
+                        subpath = row[0]
+                        pmcid = row[2]
+                        # pmid is optional
+                        pmid= row[3]
+                        license = row[4]
+                        localInfo = {}
+                        localInfo["subpath"] = subpath
+                        localInfo["pmid"] = pmid
+                        localInfo["license"] = license
+                        txn.put(pmcid.encode(encoding='UTF-8'), _serialize_pickle(localInfo)) 
+                        count += 1
+                txn.commit() 
+                self.env_pmc_oa.close()
+
+        # open in read mode only
+        self.env_pmc_oa = lmdb.open(envFilePath, readonly=True, lock=False)
 
     def harvestUnpaywall(self, filepath, reprocess=False):   
         """
@@ -197,6 +266,12 @@ class OAHarvester(object):
             entry = json.loads(line)
             doi = entry['doi']
 
+            if "genre" in entry and entry["genre"] == "component":
+                # components are figures or tables, which will be in the corresponding article with more context 
+                # and usefulness, so we skip
+                position += 1
+                continue
+
             # check if the entry has already been processed
             id_candidate = self.getUUIDByIdentifier(doi)
             if id_candidate is not None:
@@ -238,14 +313,14 @@ class OAHarvester(object):
             # if we have a mirror of arXiv, we prioritize arxiv resources for hugher chance of successful download
             if _arxiv_mirror(self.config):
                 for oa_location in entry['oa_locations']:
-                    if oa_location["url"].find('arxiv.org') != -1:
+                    if "url" in oa_location and oa_location["url"] and oa_location["url"].find('arxiv.org') != -1:
                         entry['best_oa_location'] = oa_location
                         break
 
             # if we have a PLOS resource, we use the PLOS PDF url, but also the PLOS mirror to get the JATS and TEI full text versions
             if _plos_mirror(self.config):
                 for oa_location in entry['oa_locations']:
-                    if oa_location['url_for_pdf'].find('plos.org') != -1:
+                    if 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] and oa_location['url_for_pdf'].find('plos.org') != -1:
                         entry['best_oa_location'] = oa_location
                         break
 
@@ -481,6 +556,12 @@ class OAHarvester(object):
                 if _is_valid_file(local_filename, "xml"):
                     valid_file = True
                     local_entry["valid_fulltext_xml"] = True
+
+            local_filename = os.path.join(self.config["data_path"], local_entry['id']+".zip")
+            if os.path.isfile(local_filename): 
+                if _is_valid_file(local_filename, "zip"):
+                    valid_file = True
+                    local_entry["valid_latex_sources"] = True
 
             if (result[0] is None or result[0] == "0" or result[0] == SUCCESS_DOWNLOAD) and valid_file:
                 #update DB
@@ -881,7 +962,7 @@ class OAHarvester(object):
                 except OSError:
                     logging.exception("Error cleaning tmp file: " + local_file_path)        
             # clean any existing data files  
-            if os.path.isdir(local_file_path):
+            if os.path.isdir(local_file_path) and f != "pmc_oa":
                 try:
                     shutil.rmtree(local_file_path)
                 except OSError:
@@ -908,6 +989,27 @@ class OAHarvester(object):
                 self.swift.remove_all_files()
             except:
                 logging.error("Error resetting SWIFT object storage")
+
+    def pmc_oa_check(self, pmcid):
+        try:
+            with self.env_pmc_oa.begin() as txn:
+                pmc_info_object = txn.get(pmcid.encode(encoding='UTF-8'))
+                if pmc_info_object:
+                    try:
+                        pmc_info = _deserialize_pickle(pmc_info_object)
+                    except:
+                        logging.error("omg _deserialize_pickle failed?")
+                    if "license" in pmc_info:
+                        license = pmc_info["license"]
+                        license = license.replace("\n","")
+                    else:
+                        license = ""
+                    if "subpath" in pmc_info:
+                        subpath = pmc_info["subpath"];
+                        return os.path.join(self.config["pmc_base_ftp"],subpath), license
+        except lmdb.Error:
+            logging.error("lmdb pmc os look-up failed")
+        return None, None
 
     def diagnostic(self):
         """
@@ -1551,12 +1653,32 @@ def _create_map_entry(local_entry):
     if "pii" in local_entry:
         map_entry["pii"] = local_entry["pii"]
 
+    # possible arXiv ID
+    arxiv_id = None
+    urls = []
+    if 'best_oa_location' in local_entry and 'url_for_pdf' in local_entry['best_oa_location']:
+        urls.append(local_entry['best_oa_location']['url'])
+    if "alternative_oa_locations" in local_entry and local_entry["alternative_oa_locations"]:
+        for alternative_oa_location in local_entry["alternative_oa_locations"]:
+            urls.append(alternative_oa_location['url'])
+    if len(urls)>0:
+        for local_url in urls:
+            try: 
+                arxiv_id = arxiv_url_to_id(local_url)
+            except:
+                pass
+            if arxiv_id != None and len(arxiv_id)>0:
+                map_entry["arxiv"] = arxiv_id
+                break
+
     resources = [ "json" ]
 
     if "valid_fulltext_pdf" in local_entry and local_entry["valid_fulltext_pdf"]:
         resources.append("pdf")
     if "valid_fulltext_xml" in local_entry and local_entry["valid_fulltext_xml"]:
         resources.append("xml")
+    if "valid_latex_sources" in local_entry and local_entry["valid_latex_sources"]:
+        resources.append("latex")
 
     if  "valid_thumbnails" in local_entry and local_entry["valid_thumbnails"]:  
         resources.append("thumbnails")
@@ -1648,6 +1770,20 @@ def arxiv_url_to_path(url, ext='.pdf'):
         return '/'.join([prefix, yymm, filename, filename + ext])
     except:
         logging.exception("Incorrect arXiv url format, could not extract path")
+
+def arxiv_url_to_id(url):
+    """
+    Give the arXiv ID from an arxiv URL. Note that version might be missing.
+    """
+    try:
+        _id = re.findall(r"arxiv\.org/pdf/(.*)$", url)[0]
+        prefix = "arxiv" if _id[0].isdigit() else _id.split('/')[0]
+        if prefix == "arxiv":
+            return "arxiv:" + _id
+        else:
+            return _id
+    except:
+        logging.exception("Incorrect arXiv url format, could not extract arXiv identifier")
 
 def plos_url_to_path(url, local_entry):
     """
