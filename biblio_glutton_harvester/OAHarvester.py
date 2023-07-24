@@ -138,71 +138,80 @@ class OAHarvester(object):
         envFilePath = os.path.join(self.config["data_path"], 'fail')
         self.env_fail = lmdb.open(envFilePath, map_size=map_size)
 
-        envFilePath = os.path.join(self.config["data_path"], 'pmc_oa')
-        toBeReLoaded = False
-        if os.path.isdir(envFilePath):
-            # the lmdb for pmc_oa exists, we check if it is a valid and non-empty lmdb 
-            try: 
-                self.env_pmc_oa = lmdb.open(envFilePath, readonly=True, lock=False)
-                if self.env_pmc_oa == None:
-                    toBeReLoaded = True
-                else:
-                    with self.env_pmc_oa.begin(write=True) as txn:
-                        nb_total = txn.stat()['entries']
+        if self.env_pmc_oa == None:
+            envFilePath = os.path.join(self.config["data_path"], 'pmc_oa')
+            toBeReLoaded = False
+            if os.path.isdir(envFilePath):
+                # the lmdb for pmc_oa exists, we check if it is a valid and non-empty lmdb 
+                try: 
+                    self.env_pmc_oa = lmdb.open(envFilePath, readonly=True, lock=False)
+                    if self.env_pmc_oa == None:
+                        toBeReLoaded = True
+                    else:
+                        nb_total = self.env_pmc_oa.stat()["entries"]
                         if nb_total < 1000:
                             toBeReLoaded = True
-            except:
+                except:
+                    toBeReLoaded = True
+            else:
                 toBeReLoaded = True
 
-        if toBeReLoaded: 
-            # build the PMC map information, in particular for downloading the archive file containing the PDF and XML 
-            # files (PDF not always present)
-            resource_file = os.path.join(self.config["data_path"], "oa_file_list.txt")
-            # TBD: if the file is not present we should download it at ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_file_list.txt
-            # https://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_file_list.txt
-            if not os.path.isfile(resource_file):
-                url = "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_file_list.txt"
-                logging.info("Downloading PMC resource file: " + url)
-                print("Downloading PMC resource file: " + url + " (done only at first launch... hold on...)")
-                _download_wget(url, resource_file)
+            if toBeReLoaded: 
+                self.env_pmc_oa = None
+                # build the PMC map information, in particular for downloading the archive file containing the PDF and XML 
+                # files (PDF not always present)
 
-            if os.path.isfile(resource_file) and not os.path.isdir(envFilePath):
-                # open in write mode
-                self.env_pmc_oa = lmdb.open(envFilePath, map_size=map_size)
-                txn = self.env_pmc_oa.begin(write=True)
+                resource_file = os.path.join(self.config["data_path"], "oa_file_list.txt")
+                # TBD: if the file is not present we should download it at ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_file_list.txt
+                # https://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_file_list.txt
+                if not os.path.isfile(resource_file):
+                    url = "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_file_list.txt"
+                    logging.info("Downloading PMC resource file: " + url)
+                    print("Downloading PMC resource file: " + url + " (done only at first launch... hold on...)")
+                    _download_wget(url, resource_file)
 
-                nb_lines = 0
-                # get number of line in the file
-                with open(resource_file, "r") as fp:
-                    for line in fp:
-                        nb_lines += 1
+                if os.path.isfile(resource_file) and not os.path.isdir(envFilePath):
+                    # open in write mode
+                    self.env_pmc_oa = lmdb.open(envFilePath, map_size=map_size)
+                    txn = self.env_pmc_oa.begin(write=True)
 
-                # fill this lmdb map
-                print("building PMC resource map - done only one time")
-                with open(resource_file, "r") as fp:
-                    count = 0
-                    for line in tqdm(fp, total=nb_lines):
-                        if count == 0:
-                            #skip first line which is just a time stamp
+                    nb_lines = 0
+                    # get number of line in the file
+                    with open(resource_file, "r") as fp:
+                        for line in fp:
+                            nb_lines += 1
+
+                    # fill this lmdb map
+                    print("building PMC resource map - done only one time")
+                    with open(resource_file, "r") as fp:
+                        count = 0
+                        for line in tqdm(fp, total=nb_lines):
+                            if count == 0:
+                                #skip first line which is just a time stamp
+                                count += 1
+                                continue
+                            row = line.split('\t')
+                            subpath = row[0]
+                            pmcid = row[2]
+                            # pmid is optional
+                            pmid= row[3]
+                            license = row[4]
+                            localInfo = {}
+                            localInfo["subpath"] = subpath
+                            localInfo["pmid"] = pmid
+                            localInfo["license"] = license
+                            txn.put(pmcid.encode(encoding='UTF-8'), _serialize_pickle(localInfo)) 
                             count += 1
-                            continue
-                        row = line.split('\t')
-                        subpath = row[0]
-                        pmcid = row[2]
-                        # pmid is optional
-                        pmid= row[3]
-                        license = row[4]
-                        localInfo = {}
-                        localInfo["subpath"] = subpath
-                        localInfo["pmid"] = pmid
-                        localInfo["license"] = license
-                        txn.put(pmcid.encode(encoding='UTF-8'), _serialize_pickle(localInfo)) 
-                        count += 1
-                txn.commit() 
-                self.env_pmc_oa.close()
+                    txn.commit() 
+                    self.env_pmc_oa.close()
 
-        # open in read mode only
-        self.env_pmc_oa = lmdb.open(envFilePath, readonly=True, lock=False)
+                    # cleaning the oa_file_list.txt file
+                    if os.path.isfile(resource_file):
+                        os.remove(resource_file)
+
+            # open in read mode only
+            if self.env_pmc_oa == None:
+                self.env_pmc_oa = lmdb.open(envFilePath, readonly=True, lock=False)
 
     def harvestUnpaywall(self, filepath, reprocess=False):   
         """
