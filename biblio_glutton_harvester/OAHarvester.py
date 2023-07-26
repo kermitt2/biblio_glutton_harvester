@@ -40,6 +40,8 @@ logging.getLogger("urllib3").setLevel(logging.ERROR)
 
 logging.getLogger("keystoneclient").setLevel(logging.ERROR)
 logging.getLogger("swiftclient").setLevel(logging.ERROR)
+logging.getLogger("magic").setLevel(logging.ERROR)
+logging.getLogger("chardet").setLevel(logging.ERROR)
 
 biblio_glutton_url = None
 crossref_base = None
@@ -219,6 +221,10 @@ class OAHarvester(object):
         download in parallel PDF, generate thumbnails (if selected), upload resources locally 
         or on S3 and update the json description of the entries
         """
+        global biblio_glutton_url
+        global crossref_base
+        global crossref_email
+
         if 'batch_size' in self.config:
             batch_size_pdf = self.config['batch_size']
         else:
@@ -252,141 +258,181 @@ class OAHarvester(object):
             selection = [randint(0, count-1) for p in range(0, self.sample)]
             selection.sort()
 
-        gz = gzip.open(filepath, 'rt')
-        position = 0
-        for line in tqdm(gz, total=count):
-            if selection is not None and not position in selection:
-                position += 1
-                continue
-
-            if len(line.strip()) == 0:
-                continue
-
-            if i == batch_size_pdf:
-                self.processBatch(urls, filenames, entries)
-                # reinit
-                i = 0
-                urls = []
-                entries = []
-                filenames = []
-                n += batch_size_pdf
-
-            # one json entry per line
-            entry = json.loads(line)
-            doi = entry['doi']
-
-            if "genre" in entry and entry["genre"] == "component":
-                # components are figures or tables, which will be in the corresponding article with more context 
-                # and usefulness, so we skip
-                position += 1
-                continue
-
-            # check if the entry has already been processed
-            id_candidate = self.getUUIDByIdentifier(doi)
-            if id_candidate is not None:
-                id_candidate = id_candidate.decode("utf-8") 
-                if reprocess:
-                    entry['id'] = id_candidate
-                    # did we success with this entry?  
-                    with self.env.begin() as txn:
-                        local_object = txn.get(id_candidate.encode(encoding='UTF-8'))
-                        if local_object != None:
-                            local_entry = _deserialize_pickle(local_object)
-                            if local_entry != None:
-                                if "resources" in local_entry and "pdf" in local_entry["resources"]:
-                                    # we have a PDF, so no need to reprocess and we skip
-                                    position += 1
-                                    continue
-                    # otherwise we consider the entry for reprocessing
-                else:
-                    # we don't reprocess existing entries
+        with gzip.open(filepath, 'rt') as gz:
+            position = 0
+            for line in tqdm(gz, total=count):
+                if selection is not None and not position in selection:
                     position += 1
                     continue
-            else:
-                # store a UUID
-                entry['id'] = str(uuid.uuid4())
-                with self.env_doi.begin(write=True) as txn_doi:
-                    txn_doi.put(entry['doi'].encode(encoding='UTF-8'), entry['id'].encode(encoding='UTF-8'))
 
-            if 'oa_locations' in entry and len(entry['oa_locations'])>0:
-                total_oa_location_found += 1
+                if len(line.strip()) == 0:
+                    continue
 
-            # if requested, we always prioritize PMC pdf over publisher one for higher chance of successful download
-            if "pmc" in self.config["resources"] and self.config["resources"]["pmc"] and "prioritize_pmc" in self.config["resources"]["pmc"] and self.config["resources"]["pmc"]["prioritize_pmc"]:
-                for oa_location in entry['oa_locations']:
-                    if 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
-                        if oa_location['url_for_pdf'].find('europepmc.org/articles/pmc') != -1 or oa_location['url_for_pdf'].find('ncbi.nlm.nih.gov/pmc/articles') != -1:
+                if i == batch_size_pdf:
+                    self.processBatch(urls, filenames, entries)
+                    # reinit
+                    i = 0
+                    urls = []
+                    entries = []
+                    filenames = []
+                    n += batch_size_pdf
+
+                # one json entry per line
+                entry = json.loads(line)
+                doi = entry['doi']
+
+                if "genre" in entry and entry["genre"] == "component":
+                    # components are figures or tables, which will be in the corresponding article with more context 
+                    # and usefulness, so we skip
+                    position += 1
+                    continue
+
+                # check if the entry has already been processed
+                id_candidate = self.getUUIDByIdentifier(doi)
+                if id_candidate is not None:
+                    id_candidate = id_candidate.decode("utf-8") 
+                    if reprocess:
+                        entry['id'] = id_candidate
+                        # did we success with this entry?  
+                        with self.env.begin() as txn:
+                            local_object = txn.get(id_candidate.encode(encoding='UTF-8'))
+                            if local_object != None:
+                                local_entry = _deserialize_pickle(local_object)
+                                if local_entry != None:
+                                    if "resources" in local_entry and "pdf" in local_entry["resources"]:
+                                        # we have a PDF, so no need to reprocess and we skip
+                                        position += 1
+                                        continue
+                        # otherwise we consider the entry for reprocessing
+                    else:
+                        # we don't reprocess existing entries
+                        position += 1
+                        continue
+                else:
+                    # store a UUID
+                    entry['id'] = str(uuid.uuid4())
+                    with self.env_doi.begin(write=True) as txn_doi:
+                        txn_doi.put(entry['doi'].encode(encoding='UTF-8'), entry['id'].encode(encoding='UTF-8'))
+
+                if 'oa_locations' in entry and len(entry['oa_locations'])>0:
+                    total_oa_location_found += 1
+
+                if biblio_glutton_url != None:
+                    # enriching the bibliographical information via biblio-glutton
+                    local_doi = None
+                    if "doi" in entry:
+                        local_doi = entry['doi']
+                    local_pmcid = None
+                    if "pmicd" in entry:
+                        local_pmcid = entry['pmicd']
+                    local_pmid = None
+                    if "pmid" in entry:
+                        local_pmid = entry['pmid']
+                    glutton_record = _biblio_glutton_lookup(biblio_glutton_url,
+                                                            doi=local_doi,
+                                                            pmcid=local_pmcid,
+                                                            pmid=local_pmid,
+                                                            crossref_base= crossref_base, 
+                                                            crossref_email=crossref_email)
+                    if glutton_record != None:
+                        entry["glutton"] = glutton_record
+                        if not "doi" in entry and "doi" in glutton_record:
+                            entry["doi"] = glutton_record["doi"]
+                        if not "pmid" in entry and "pmid" in glutton_record:
+                            entry["pmid"] = glutton_record["pmid"]
+                        if not "pmcid" in entry and "pmcid" in glutton_record:
+                            entry["pmcid"] = glutton_record["pmcid"]    
+                        if not "istexId" in entry and "istexId" in glutton_record:
+                            entry["istexId"] = glutton_record["istexId"]
+
+                # if requested, we always prioritize PMC pdf over publisher one for higher chance of successful download
+                if "pmc" in self.config["resources"] and self.config["resources"]["pmc"] and "prioritize_pmc" in self.config["resources"]["pmc"] and self.config["resources"]["pmc"]["prioritize_pmc"]:
+                    for oa_location in entry['oa_locations']:
+                        if 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
+                            if oa_location['url_for_pdf'].find('europepmc.org/articles/pmc') != -1 or oa_location['url_for_pdf'].find('ncbi.nlm.nih.gov/pmc/articles') != -1:
+                                entry['best_oa_location'] = oa_location
+
+                            # if PMC is prefered, we also change the download url to retrieve the tar archive from the NIH PMC ftp server
+                            # rather than a vulgus PDF
+                            if "pmcid" in entry:
+                                localUrl, localLicense = self.pmc_oa_check(pmcid=entry["pmcid"])
+                                if localUrl is not None:
+                                    entry['best_oa_location']['url_for_pdf'] = localUrl
+                                    if localLicense is not None:
+                                        entry['license'] = localLicense
+                                break
+
+                # if we have a mirror of arXiv, we prioritize arxiv resources for hugher chance of successful download
+                if _arxiv_mirror(self.config):
+                    for oa_location in entry['oa_locations']:
+                        if "url" in oa_location and oa_location["url"] and oa_location["url"].find('arxiv.org') != -1:
                             entry['best_oa_location'] = oa_location
                             break
 
-            # if we have a mirror of arXiv, we prioritize arxiv resources for hugher chance of successful download
-            if _arxiv_mirror(self.config):
-                for oa_location in entry['oa_locations']:
-                    if "url" in oa_location and oa_location["url"] and oa_location["url"].find('arxiv.org') != -1:
-                        entry['best_oa_location'] = oa_location
-                        break
-
-            # if we have a PLOS resource, we use the PLOS PDF url, but also the PLOS mirror to get the JATS and TEI full text versions
-            if _plos_mirror(self.config):
-                for oa_location in entry['oa_locations']:
-                    if 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] and oa_location['url_for_pdf'].find('plos.org') != -1:
-                        entry['best_oa_location'] = oa_location
-                        break
-
-            # if the best location is none, we discard it 
-            if 'best_oa_location' in entry and entry['best_oa_location'] == None:
-                del entry['best_oa_location']
-
-            # if the best location is not none but it has no usable 'url_for_pdf' field, we discard it 
-            if 'best_oa_location' in entry and entry['best_oa_location'] != None and not 'url_for_pdf' in entry['best_oa_location']:
-                del entry['best_oa_location']
-            if 'best_oa_location' in entry and entry['best_oa_location'] != None and 'url_for_pdf' in entry['best_oa_location'] and entry['best_oa_location']['url_for_pdf'] == None:
-                del entry['best_oa_location']
-
-            if not 'best_oa_location' in entry and 'oa_locations' in entry and len(entry['oa_locations'])>0:
-                # the best oa_location identified with a "is_best" attribute, we need a valid link to a PDF too
-                for oa_location in entry['oa_locations']:
-                    if oa_location['is_best'] and 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
-                        entry['best_oa_location'] = oa_location
-                        break
-
-            if 'oa_locations' in entry and len(entry['oa_locations'])>0:
-                # if still no best location, take the first one with a valid link to a PDF
-                # otherwise, we store lternative non-best PDF URL to improve chance of download
-                for oa_location in entry['oa_locations']:
-                    if 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
-                        if not 'best_oa_location' in entry:
+                # if we have a PLOS resource, we use the PLOS PDF url, but also the PLOS mirror to get the JATS and TEI full text versions
+                if _plos_mirror(self.config):
+                    for oa_location in entry['oa_locations']:
+                        if 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] and oa_location['url_for_pdf'].find('plos.org') != -1:
                             entry['best_oa_location'] = oa_location
-                        elif entry['best_oa_location'] != oa_location:
-                            # consider alternative non-best PDF URL to improve chance of download,
-                            if not 'alternative_oa_locations' in entry:
-                                entry['alternative_oa_locations'] = []
-                            entry['alternative_oa_locations'].append(oa_location)
+                            break
 
-            if 'oa_locations' in entry and len(entry['oa_locations'])>0:
-                if not 'best_oa_location' in entry:
-                    total_oa_location_found_but_empty_pdf_url += 1
+                # if the best location is none, we discard it 
+                if 'best_oa_location' in entry and entry['best_oa_location'] == None:
+                    del entry['best_oa_location']
 
-            if 'best_oa_location' in entry:
-                if entry['best_oa_location'] is not None and 'url_for_pdf' in entry['best_oa_location']:
-                    pdf_url = entry['best_oa_location']['url_for_pdf']
-                    if pdf_url is not None:
-                        total_pdf_url_found += 1
+                # if the best location is not none but it has no usable 'url_for_pdf' field, we discard it 
+                if 'best_oa_location' in entry and entry['best_oa_location'] != None and not 'url_for_pdf' in entry['best_oa_location']:
+                    del entry['best_oa_location']
+                if 'best_oa_location' in entry and entry['best_oa_location'] != None and 'url_for_pdf' in entry['best_oa_location'] and entry['best_oa_location']['url_for_pdf'] == None:
+                    del entry['best_oa_location']
 
-                        urls.append(pdf_url)
-                        entries.append(entry)
+                if not 'best_oa_location' in entry and 'oa_locations' in entry and len(entry['oa_locations'])>0:
+                    # the best oa_location identified with a "is_best" attribute, we need a valid link to a PDF too
+                    for oa_location in entry['oa_locations']:
+                        if oa_location['is_best'] and 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
+                            entry['best_oa_location'] = oa_location
+                            break
 
-                        filenames.append(os.path.join(self.config["data_path"], entry['id']+".pdf"))
-                        i += 1
-                        if "is_best" in entry['best_oa_location']:
-                            del entry['best_oa_location']['is_best']
-            else:
-                total_no_best_oa_location_found += 1
+                if 'oa_locations' in entry and len(entry['oa_locations'])>0:
+                    # if still no best location, take the first one with a valid link to a PDF
+                    # otherwise, we store lternative non-best PDF URL to improve chance of download
+                    for oa_location in entry['oa_locations']:
+                        if 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
+                            if not 'best_oa_location' in entry:
+                                entry['best_oa_location'] = oa_location
+                            elif entry['best_oa_location'] != oa_location:
+                                # consider alternative non-best PDF URL to improve chance of download,
+                                if not 'alternative_oa_locations' in entry:
+                                    entry['alternative_oa_locations'] = []
+                                entry['alternative_oa_locations'].append(oa_location)
 
-            position += 1
+                if 'oa_locations' in entry and len(entry['oa_locations'])>0:
+                    if not 'best_oa_location' in entry:
+                        total_oa_location_found_but_empty_pdf_url += 1
+
+                if 'best_oa_location' in entry:
+                    if entry['best_oa_location'] is not None and 'url_for_pdf' in entry['best_oa_location']:
+                        pdf_url = entry['best_oa_location']['url_for_pdf']
+                        if pdf_url is not None:
+                            total_pdf_url_found += 1
+
+                            urls.append(pdf_url)
+                            entries.append(entry)
+
+                            if pdf_url.endswith("tar.gz"):
+                                # this is a PMC archive
+                                filenames.append(os.path.join(self.config["data_path"], entry['id']+".tar.gz"))
+                            else:
+                                # this is a usual PDF
+                                filenames.append(os.path.join(self.config["data_path"], entry['id']+".pdf"))
+                            i += 1
+                            if "is_best" in entry['best_oa_location']:
+                                del entry['best_oa_location']['is_best']
+                else:
+                    total_no_best_oa_location_found += 1
+
+                position += 1
             
-        gz.close()
-
         # we need to process the latest incomplete batch (if not empty)
         if len(urls) >0:
             self.processBatch(urls, filenames, entries)
@@ -453,7 +499,7 @@ class OAHarvester(object):
                     continue
 
                 if i == batch_size_pdf:
-                    self.processBatch(urls, filenames, entries)#, txn, txn_doi, txn_fail)
+                    self.processBatch(urls, filenames, entries)
                     # reinit
                     i = 0
                     urls = []
@@ -537,7 +583,7 @@ class OAHarvester(object):
 
     def processBatch(self, urls, filenames, entries):
         with ThreadPoolExecutor(max_workers=12) as executor:
-            results = executor.map(_download, urls, filenames, entries, timeout=30)
+            results = executor.map(_download, urls, filenames, entries)#, timeout=30)
 
         # LMDB write transaction must be performed in the thread that created the transaction, so
         # better to have the following lmdb updates out of the paralell process
@@ -553,48 +599,51 @@ class OAHarvester(object):
                 if _is_valid_file(local_filename, "pdf"):
                     valid_file = True
                     local_entry["valid_fulltext_pdf"] = True
+                else:
+                    if os.path.isfile(local_filename): 
+                        os.remove(local_filename)
             
             local_filename = os.path.join(self.config["data_path"], local_entry['id']+".nxml")
             if os.path.isfile(local_filename): 
                 if _is_valid_file(local_filename, "xml"):
                     valid_file = True
                     local_entry["valid_fulltext_xml"] = True
+                else:
+                    if os.path.isfile(local_filename): 
+                        os.remove(local_filename)
 
             local_filename = os.path.join(self.config["data_path"], local_entry['id']+".jats.xml")
             if os.path.isfile(local_filename): 
                 if _is_valid_file(local_filename, "xml"):
                     valid_file = True
                     local_entry["valid_fulltext_xml"] = True
+                else:
+                    if os.path.isfile(local_filename): 
+                        os.remove(local_filename)
 
             local_filename = os.path.join(self.config["data_path"], local_entry['id']+".zip")
             if os.path.isfile(local_filename): 
                 if _is_valid_file(local_filename, "zip"):
                     valid_file = True
                     local_entry["valid_latex_sources"] = True
+                else:
+                    if os.path.isfile(local_filename): 
+                        os.remove(local_filename)
+
+            #update DB
+            with self.env.begin(write=True) as txn:
+                txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(_create_map_entry(local_entry))) 
 
             if (result[0] is None or result[0] == "0" or result[0] == SUCCESS_DOWNLOAD) and valid_file:
-                #update DB
-                with self.env.begin(write=True) as txn:
-                    txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(_create_map_entry(local_entry))) 
-
-                #with self.env_doi.begin(write=True) as txn_doi:
-                #    txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
-
                 entries.append(local_entry)
             else:
                 logging.info("register harvesting failure: " + result[0])
-                
-                #update DB
-                with self.env.begin(write=True) as txn:
-                    txn.put(local_entry['id'].encode(encoding='UTF-8'), _serialize_pickle(_create_map_entry(local_entry)))  
-
-                #with self.env_doi.begin(write=True) as txn_doi:
-                #    txn_doi.put(local_entry['doi'].encode(encoding='UTF-8'), local_entry['id'].encode(encoding='UTF-8'))
 
                 with self.env_fail.begin(write=True) as txn_fail:
                     txn_fail.put(local_entry['id'].encode(encoding='UTF-8'), result[0].encode(encoding='UTF-8'))
 
                 # if an empty pdf or tar file is present, we clean it
+                '''
                 local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
                 if os.path.isfile(local_filename): 
                     os.remove(local_filename)
@@ -616,10 +665,11 @@ class OAHarvester(object):
                 local_filename = os.path.join(self.config["data_path"], local_entry['id']+".json")
                 if os.path.isfile(local_filename): 
                     os.remove(local_filename)
+                '''
 
         # finally we can parallelize the thumbnail/upload/file cleaning steps for this batch
         with ThreadPoolExecutor(max_workers=12) as executor:
-            results = executor.map(self.manageFiles, entries, timeout=30)
+            results = executor.map(self.manageFiles, entries)#, timeout=30)
 
     def getUUIDByIdentifier(self, identifier):
         txn = self.env_doi.begin()
@@ -826,8 +876,11 @@ class OAHarvester(object):
             local_filename_tar = os.path.join(self.config["data_path"], local_entry['id']+".tar.gz")
             if os.path.isfile(local_filename_tar): 
                 os.remove(local_filename_tar)
+            local_filename_tar = os.path.join(self.config["data_path"], local_entry['id']+".decompressed")
+            if os.path.isfile(local_filename_tar): 
+                os.remove(local_filename_tar)
 
-            if (self.thumbnail):
+            if self.thumbnail:
                 if os.path.isfile(thumb_file_small): 
                     os.remove(thumb_file_small)
                 if os.path.isfile(thumb_file_medium): 
@@ -844,38 +897,36 @@ class OAHarvester(object):
         '''
 
         # init lmdb transactions
-        txn = self.env.begin(write=True)
-        
-        nb_total = txn.stat()['entries']
-        print("number of entries with OA link:", nb_total)
+        with self.env.begin(write=False) as txn:
+            nb_total = txn.stat()['entries']
+            print("number of entries with OA link:", nb_total)
 
-        file_out_fail = None
-        if fail_file != None:
+            file_out_fail = None    
             try:
-                file_out_fail = open(fail_file,'w')
+                if fail_file != None:
+                    file_out_fail = open(fail_file,'w')
+                with open(dump_file,'w') as file_out:
+                    # iterate over lmdb
+                    cursor = txn.cursor()
+                    for key, value in cursor:
+                        if txn.get(key) is None:
+                            continue
+                        map_entry = _deserialize_pickle(txn.get(key))
+                        map_entry["id"] = key.decode(encoding='UTF-8')
+
+                        json_local_entry = json.dumps(map_entry)
+                        file_out.write(json_local_entry)
+                        file_out.write("\n")
+
+                        if file_out_fail != None:
+                            if 'resources' in json_local_entry and not 'pdf' in json_local_entry['resources'] and not 'xml' in json_local_entry['resources']:               
+                                file_out_fail.write(json.dumps(map_entry))
+                                file_out_fail.write("\n")
             except:
-                logging.exception("Could not open dump file for havesting failure report")
-
-        with open(dump_file,'w') as file_out:
-            # iterate over lmdb
-            cursor = txn.cursor()
-            for key, value in cursor:
-                if txn.get(key) is None:
-                    continue
-                map_entry = _deserialize_pickle(txn.get(key))
-                map_entry["id"] = key.decode(encoding='UTF-8')
-
-                json_local_entry = json.dumps(map_entry)
-                file_out.write(json_local_entry)
-                file_out.write("\n")
-
+                logging.exception("Could not open dump file")
+            finally:
                 if file_out_fail != None:
-                    if 'resources' in json_local_entry and not 'pdf' in json_local_entry['resources'] and not 'xml' in json_local_entry['resources']:               
-                        file_out_fail.write(json.dumps(map_entry))
-                        file_out_fail.write("\n")
-
-        if file_out_fail != None:
-            file_out_fail.close()
+                    file_out_fail.close()
 
         if self.config["compression"]:
             subprocess.check_call(['gzip', '-f', dump_file])
@@ -1015,7 +1066,7 @@ class OAHarvester(object):
                         license = ""
                     if "subpath" in pmc_info:
                         subpath = pmc_info["subpath"];
-                        return os.path.join(self.config["pmc_base_ftp"],subpath), license
+                        return os.path.join(self.config["resources"]["pmc"]["pmc_base"],subpath), license
         except lmdb.Error:
             logging.error("lmdb pmc os look-up failed")
         return None, None
@@ -1140,6 +1191,7 @@ def _download(url, filename, local_entry, config=None):
         # add extra PLOS resources: JATS XML fulltext and possible extra annotations
         _download_plos_extra(url, filename, local_entry, config= config)
 
+    '''
     if biblio_glutton_url != None:
         local_doi = None
         if "doi" in local_entry:
@@ -1166,17 +1218,20 @@ def _download(url, filename, local_entry, config=None):
                 local_entry["pmcid"] = glutton_record["pmcid"]    
             if not "istexId" in local_entry and "istexId" in glutton_record:
                 local_entry["istexId"] = glutton_record["istexId"]
+    '''
 
     result = FAIL_DOWNLOAD
     if str(url).startswith("ftp"): 
         result = _download_wget(url, filename)
+        '''
         if result != "success":
             # this appears to be not reliable at all with lot of decompression errors
             # but as last options why not
             result = _download_ftp(url, filename) 
+        '''
 
-    if result != SUCCESS_DOWNLOAD:
-        result = _download_cloudscraper(url, filename)
+    #if result != SUCCESS_DOWNLOAD:
+    #    result = _download_cloudscraper(url, filename)
 
     if result != SUCCESS_DOWNLOAD:
         result = _download_requests(url, filename)
@@ -1191,13 +1246,14 @@ def _download(url, filename, local_entry, config=None):
                 if "url_for_pdf" in alternative_oa_location and alternative_oa_location["url_for_pdf"] and len(alternative_oa_location["url_for_pdf"])>0:
                     if str(alternative_oa_location["url_for_pdf"]).startswith("ftp"): 
                         result = _download_wget(alternative_oa_location["url_for_pdf"], filename)
+                        '''
                         if result != "success":
                             # this appears to be not reliable at all with lot of decompression errors
                             # but as last options why not
                             result = _download_ftp(alternative_oa_location["url_for_pdf"], filename) 
-
-                    if result != SUCCESS_DOWNLOAD:
-                        result = _download_cloudscraper(alternative_oa_location["url_for_pdf"], filename)
+                        '''
+                    #if result != SUCCESS_DOWNLOAD:
+                    #    result = _download_cloudscraper(alternative_oa_location["url_for_pdf"], filename)
 
                     if result != SUCCESS_DOWNLOAD:
                         result = _download_requests(alternative_oa_location["url_for_pdf"], filename)
@@ -1214,7 +1270,7 @@ def _download(url, filename, local_entry, config=None):
 
     return result, local_entry
 
-def _download_cloudscraper(url, filename, n=0, timeout_in_seconds=30):
+def _download_cloudscraper(url, filename, n=0, timeout_in_seconds=20):
     """
     Use a cloudscraper session for downloading Cloudflare protected file. 
     Header agant generation is managed by cloudscraper.
@@ -1232,7 +1288,7 @@ def _download_cloudscraper(url, filename, n=0, timeout_in_seconds=30):
                 if file_data.text[:5] == '%PDF-':
                     with open(filename, 'wb') as f_out:
                         f_out.write(file_data.content)
-                    result = SUCCESS_DOWNLOAD
+                        result = SUCCESS_DOWNLOAD
                 elif n < 5:
                     soup = BeautifulSoup(file_data.text, 'html.parser')
                     if soup.select_one('a#redirect'):
@@ -1247,6 +1303,7 @@ def _download_cloudscraper(url, filename, n=0, timeout_in_seconds=30):
                     result = SUCCESS_DOWNLOAD
     except Exception:
         logging.exception("Download failed for {0} with cloudscraper".format(url))
+    
     return result
 
 def _download_wget(url, filename):
@@ -1260,7 +1317,7 @@ def _download_wget(url, filename):
     result = FAIL_DOWNLOAD
     # This is the most robust and reliable way to download files I found with Python... to rely on system wget :)
     #cmd = "wget -c --quiet" + " -O " + filename + ' --connect-timeout=10 --waitretry=10 ' + \
-    cmd = "wget -c --quiet" + " -O " + filename + ' --timeout=15 --waitretry=0 --tries=5 --retry-connrefused ' + \
+    cmd = "wget -c --quiet" + " -O " + filename + ' --timeout=20 --waitretry=0 --tries=4 --retry-connrefused ' + \
         '--header="User-Agent: ' + _get_random_user_agent()+ '" ' + \
         '--header="Accept: application/pdf, text/html;q=0.9,*/*;q=0.8" --header="Accept-Encoding: gzip, deflate" ' + \
         '--no-check-certificate ' + \
@@ -1306,27 +1363,13 @@ def _download_requests(url, filename):
     HEADERS = {"""User-Agent""": _get_random_user_agent()}
     result = FAIL_DOWNLOAD
     try:
-        file_data = requests.get(url, allow_redirects=True, headers=HEADERS, verify=False, timeout=30)
+        file_data = requests.get(url, allow_redirects=True, headers=HEADERS, verify=False, timeout=20)
         if file_data.status_code == 200:
             with open(filename, 'wb') as f_out:
                 f_out.write(file_data.content)
             result = SUCCESS_DOWNLOAD
     except Exception:
         logging.exception("Download failed for {0} with requests".format(url))
-    return result
-
-def _download_ftp(url, filename):
-    """
-    https://stackoverflow.com/questions/11768214/python-download-a-file-from-an-ftp-server
-    """
-    result = FAIL_DOWNLOAD
-    try:
-        with closing(request.urlopen(url)) as r:
-            with open(filename, 'wb') as f:
-                shutil.copyfileobj(r, f)
-                result = SUCCESS_DOWNLOAD
-    except Exception as e:
-        logging.exception("Download failed for {0} with ftp adapter".format(url))
     return result
 
 def _download_arxiv(url, filename, local_entry, config= None):
@@ -1390,6 +1433,17 @@ def _download_arxiv(url, filename, local_entry, config= None):
             source_file_path = swift_arxiv.download_file(arxiv_url_sources, source_filename)
         else:
             logging.error("S3/Swift settings for accessing arXiv mirror are not valid")
+
+        '''
+        if source_file_path != None:
+            try:
+                latex2tei.process_archive_file(source_file_path)
+            finally:
+                # clean the latexml scories
+                for the_file in os.listdir(dirname):
+                    if the_file.endswith(".log") and the_file != "harvested.log":
+                        os.remove(the_file)
+        '''
 
         '''
         if source_file_path != None:
@@ -1502,18 +1556,23 @@ def _check_compression(file):
     if os.path.isfile(file):
         if os.path.getsize(file) == 0:
             return False
+        if file.endswith(".tar.gz"):
+            # we don't decompress this, it will be done when handling tar files
+            return True
         file_type = magic.from_file(file, mime=True)
         if file_type == 'application/gzip':
             success = False
             # decompressed in tmp file
-            with gzip.open(file, 'rb') as f_in:
-                with open(file+'.decompressed', 'wb') as f_out:
-                    try:
-                        shutil.copyfileobj(f_in, f_out)
-                    except OSError:  
-                        logging.exception("Decompression file failed")
-                    else:
-                        success = True
+            try:
+                with gzip.open(file, 'rb') as f_in:
+                    with open(file+'.decompressed', 'wb') as f_out:
+                        try:
+                            shutil.copyfileobj(f_in, f_out)
+                            success = True
+                        except OSError:  
+                            logging.exception("Decompression file failed")  
+            except:
+                logging.exception("Failure to uncompress file " + file)                        
             # replace the file
             if success:
                 try:
@@ -1553,60 +1612,57 @@ def _manage_pmc_archives(filename):
     if os.path.isfile(filename) and filename.endswith(".tar.gz"):
         try:
             # for PMC we still have to extract the PDF from archive
-            #print(filename, "is an archive")
             thedir = os.path.dirname(filename)
             # we need to extract the PDF, the NLM extra file, change file name and remove the tar file
-            tar = tarfile.open(filename)
-            pdf_found = False
-            # this is a unique temporary subdirectory to extract the relevant files in the archive, unique directory is
-            # introduced to avoid several files with the same name from different archives to be extracted in the 
-            # same place 
-            basename = os.path.basename(filename)
-            tmp_subdir = basename[0:6]
-            for member in tar.getmembers():
-                if not pdf_found and member.isfile() and (member.name.endswith(".pdf") or member.name.endswith(".PDF")):
-                    member.name = os.path.basename(member.name)
-                    # create unique subdirectory
-                    if not os.path.exists(os.path.join(thedir,tmp_subdir)):
-                        os.mkdir(os.path.join(thedir,tmp_subdir))
-                    f = tar.extract(member, path=os.path.join(thedir,tmp_subdir))
-                    #print("extracted file:", member.name)
-                    # be sure that the file exists (corrupted archives are not a legend)
-                    if os.path.isfile(os.path.join(thedir,tmp_subdir,member.name)):
-                        os.rename(os.path.join(thedir,tmp_subdir,member.name), filename.replace(".tar.gz", ".pdf"))                        
-                        pdf_found = True
-                    # delete temporary unique subdirectory
+            with tarfile.open(filename) as tar:
+                pdf_found = False
+                # this is a unique temporary subdirectory to extract the relevant files in the archive, unique directory is
+                # introduced to avoid several files with the same name from different archives to be extracted in the 
+                # same place 
+                basename = os.path.basename(filename)
+                tmp_subdir = basename[0:6]
+                for member in tar.getmembers():
+                    if not pdf_found and member.isfile() and (member.name.endswith(".pdf") or member.name.endswith(".PDF")):
+                        member.name = os.path.basename(member.name)
+                        # create unique subdirectory
+                        if not os.path.exists(os.path.join(thedir,tmp_subdir)):
+                            os.mkdir(os.path.join(thedir,tmp_subdir))
+                        f = tar.extract(member, path=os.path.join(thedir,tmp_subdir))
+                        #print("extracted file:", member.name)
+                        # be sure that the file exists (corrupted archives are not a legend)
+                        if os.path.isfile(os.path.join(thedir,tmp_subdir,member.name)):
+                            os.rename(os.path.join(thedir,tmp_subdir,member.name), filename.replace(".tar.gz", ".pdf"))                        
+                            pdf_found = True
+                        # delete temporary unique subdirectory
+                        try:
+                            shutil.rmtree(os.path.join(thedir,tmp_subdir))
+                        except OSError:  
+                            logging.exception("Deletion of tmp dir failed: " + os.path.join(thedir,tmp_subdir))     
+                        #break
+                    if member.isfile() and member.name.endswith(".nxml"):
+                        member.name = os.path.basename(member.name)
+                        # create unique subdirectory
+                        if not os.path.exists(os.path.join(thedir,tmp_subdir)):
+                            os.mkdir(os.path.join(thedir,tmp_subdir))
+                        f = tar.extract(member, path=os.path.join(thedir,tmp_subdir))
+                        #print("extracted file:", member.name)
+                        # be sure that the file exists (corrupted archives are not a legend)
+                        if os.path.isfile(os.path.join(thedir,tmp_subdir,member.name)):
+                            os.rename(os.path.join(thedir,tmp_subdir,member.name), filename.replace(".tar.gz", ".nxml"))
+                        # delete temporary unique subdirectory
+                        try:
+                            shutil.rmtree(os.path.join(thedir,tmp_subdir))
+                        except OSError:  
+                            logging.exception("Deletion of tmp dir failed: " + os.path.join(thedir,tmp_subdir))      
+                if not pdf_found:
+                    logging.warning("no pdf found in archive: " + filename)
+                if os.path.isfile(filename):
                     try:
-                        shutil.rmtree(os.path.join(thedir,tmp_subdir))
+                        os.remove(filename)
                     except OSError:  
-                        logging.exception("Deletion of tmp dir failed: " + os.path.join(thedir,tmp_subdir))     
-                    #break
-                if member.isfile() and member.name.endswith(".nxml"):
-                    member.name = os.path.basename(member.name)
-                    # create unique subdirectory
-                    if not os.path.exists(os.path.join(thedir,tmp_subdir)):
-                        os.mkdir(os.path.join(thedir,tmp_subdir))
-                    f = tar.extract(member, path=os.path.join(thedir,tmp_subdir))
-                    #print("extracted file:", member.name)
-                    # be sure that the file exists (corrupted archives are not a legend)
-                    if os.path.isfile(os.path.join(thedir,tmp_subdir,member.name)):
-                        os.rename(os.path.join(thedir,tmp_subdir,member.name), filename.replace(".tar.gz", ".nxml"))
-                    # delete temporary unique subdirectory
-                    try:
-                        shutil.rmtree(os.path.join(thedir,tmp_subdir))
-                    except OSError:  
-                        logging.exception("Deletion of tmp dir failed: " + os.path.join(thedir,tmp_subdir))      
-            tar.close()
-            if not pdf_found:
-                logging.warning("no pdf found in archive: " + filename)
-            if os.path.isfile(filename):
-                try:
-                    os.remove(filename)
-                except OSError:  
-                    logging.exception("Deletion of PMC archive file failed: " + filename) 
+                        logging.exception("Deletion of PMC archive file failed: " + filename) 
         except Exception as e:
             logging.exception("Unexpected error")
-            pass
 
 def generate_thumbnail(pdfFile):
     """
@@ -1792,7 +1848,8 @@ def arxiv_url_to_id(url):
         else:
             return _id
     except:
-        logging.exception("Incorrect arXiv url format, could not extract arXiv identifier")
+       #logging.exception("Incorrect arXiv url format, could not extract arXiv identifier")
+       pass
 
 def plos_url_to_path(url, local_entry):
     """
