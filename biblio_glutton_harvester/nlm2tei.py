@@ -137,12 +137,12 @@ class Nlm2tei(object):
                 identifier = f.split(".")[0]
                 if self.s3 is not None:
                     # upload results on S3 bucket
-                    self.s3.upload_file_to_s3(identifier+".pub2tei.tei.xml", generateStoragePath(identifier), storage_class='ONEZONE_IA')
+                    self.s3.upload_file_to_s3(identifier+".pub2tei.tei.xml", os.path.join(generateStoragePath(identifier), identifier), storage_class='ONEZONE_IA')
                 elif self.swift is not None:
                     # upload results on swift object storage
-                    self.swift.upload_file_to_swift(identifier+".pub2tei.tei.xml", generateStoragePath(identifier))
+                    self.swift.upload_file_to_swift(identifier+".pub2tei.tei.xml", os.path.join(generateStoragePath(identifier), identifier))
                 else:   
-                    dest_path = os.path.join(self.config["data_path"], generateStoragePath(identifier), identifier+".pub2tei.tei.xml")
+                    dest_path = os.path.join(self.config["data_path"], generateStoragePath(identifier), identifier, identifier+".pub2tei.tei.xml")
                     shutil.copyfile(os.path.join(temp_dir_out,f), dest_path)
         
         # clean temp dir
@@ -151,7 +151,6 @@ class Nlm2tei(object):
         except OSError as e:
             print("Error: %s - %s." % (e.filename, e.strerror))
         
-
     def process(self, force=False):
         """
         Launch the conversion process
