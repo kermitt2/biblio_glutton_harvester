@@ -608,18 +608,12 @@ class OAHarvester(object):
                 if _is_valid_file(local_filename, "xml"):
                     valid_file = True
                     local_entry["valid_fulltext_xml"] = True
-                else:
-                    if os.path.isfile(local_filename): 
-                        os.remove(local_filename)
 
             local_filename = os.path.join(self.config["data_path"], local_entry['id']+".jats.xml")
             if os.path.isfile(local_filename): 
                 if _is_valid_file(local_filename, "xml"):
                     valid_file = True
                     local_entry["valid_fulltext_xml"] = True
-                else:
-                    if os.path.isfile(local_filename): 
-                        os.remove(local_filename)
 
             local_filename = os.path.join(self.config["data_path"], local_entry['id']+".zip")
             if os.path.isfile(local_filename): 
@@ -642,7 +636,7 @@ class OAHarvester(object):
                 with self.env_fail.begin(write=True) as txn_fail:
                     txn_fail.put(local_entry['id'].encode(encoding='UTF-8'), result[0].encode(encoding='UTF-8'))
 
-                # if an empty pdf or tar file is present, we clean it
+                # if an empty pdf or tar file is present, we clean
                 '''
                 local_filename = os.path.join(self.config["data_path"], local_entry['id']+".pdf")
                 if os.path.isfile(local_filename): 

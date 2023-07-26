@@ -58,7 +58,7 @@ class LaTeX2tei(object):
         apply the LaTeXML transformation to TEI XML. Rename the zip file to explicitely indicate that
         we have latex sources in it. 
         """
-        batch_size = 20
+        batch_size = 100
 
         # for batch processing, store the latex zip archive file and zip parent directories 
         the_files = []
@@ -67,7 +67,6 @@ class LaTeX2tei(object):
         # walk through the data directory, copy .nxml files to the temp directory
         for root, dirs, files in os.walk(self.config["data_path"]):
             for the_file in files:
-                # normally all NLM/JATS files are stored with extension .nxml, but for safety we also cover .nlm extension
                 if the_file.endswith(".zip"):
                     # check if the TEI file has not already been generated for this source, except if the re-processing is forced
                     # check if the TEI file has already been generated, except if we force the re-process
@@ -81,23 +80,19 @@ class LaTeX2tei(object):
                     the_files.append(the_file)
                     the_roots.append(root)
 
-                    #self.process_archive_file(the_file, root=root)
-
         # process last batch if not empty
         if len(the_files) >= 0:
-            self.process_batch(the_files, the_roots)
+            self.process_batch(the_files, the_roots)  
 
     def process_batch(self, the_files, the_roots):
         with ProcessPoolExecutor(max_workers=8) as executor:
-            results = executor.map(self.process_archive_file, the_files, the_roots)#, timeout=120)
+            results = executor.map(self.process_archive_file, the_files, the_roots)#, timeout=60)
 
-    def process_archive_file(self, zip_file, root=None):
+    def process_archive_file(self, zip_file, root):
         '''
         Examine a latex zip source file and process the main latex file
         '''
         # unzip this zip thing, this is the easiest way to manage then latex files
-        if root == None:
-            root = self.config["data_path"]
         directory_to_extract_to = os.path.join(self.config["data_path"], zip_file.replace(".zip", "_zip_tmp"))
         try:
             os.mkdir(directory_to_extract_to)
@@ -130,7 +125,7 @@ class LaTeX2tei(object):
                 local_entry = None
                 update_entry = False
         except:
-            logging.exception("Cannot unzip the archive file: " + os.path.join(root,zip_file))
+            logging.exception("Failed to process the archive file: " + os.path.join(root,zip_file))
         finally:
             # delete extraction directory
             shutil.rmtree(directory_to_extract_to)
@@ -150,17 +145,18 @@ class LaTeX2tei(object):
         cmd1 += " --destination " + latexml_file + " --quiet --path " + directory_to_extract_to + " " + root_latex_file
 
         cmd2 = os.path.join(self.config["latexml_path"], "./blib/script/latexmlpost")
-        cmd2 += " --destination " + tei_destination + " --quiet --pmml --mathtex --format tei  --novalidate --sourcedirectory " + directory_to_extract_to + " " + latexml_file
+        cmd2 += " --destination " + tei_destination + " --quiet --pmml --mathtex --format tei  --novalidate --nopictureimages --nographicimages --sourcedirectory " + directory_to_extract_to + " " + latexml_file
 
         try:
             result = subprocess.check_call(cmd1, shell=True)
+            #result = subprocess.check_output(cmd1, timeout=60)
             result = subprocess.check_call(cmd2, shell=True)
             result = "success"
         except subprocess.CalledProcessError as e:   
             print("e.returncode", e.returncode)
-            print("e.output", e.output)
+            #print("e.output", e.output)
             #if e.output is not None and e.output.startswith('error: {'):
-            if  e.output is not None:
+            if e.output is not None:
                 error = json.loads(e.output[7:]) # Skip "error: "
                 print("error code:", error['code'])
                 print("error message:", error['message'])
@@ -174,6 +170,25 @@ class LaTeX2tei(object):
                     os.remove(the_file)
 
         return result
+
+    def post_process(self):
+        # for some unknown reason, there are still some tmp repository not cleaned
+        # clean any possibly remaining tmp files 
+        for file_path in os.listdir(self.config["data_path"]):
+            # clean any existing data files  
+            if os.path.isdir(file_path) and file_path.endswith("_zip_tmp"):
+                try:
+                    shutil.rmtree(file_path)
+                except OSError:
+                    logging.exception("Error cleaning tmp files: " + file_path)
+
+        # walk through the data directory, copy .nxml files to the temp directory
+        for root, dirs, files in os.walk(self.config["data_path"]):
+            for the_file in files:
+                if the_file.endswith(".css") or the_file.endswith(".cache"):
+                    os.remove(os.path.join(root,the_file))
+                elif os.path.isdir(the_file):
+                    shutil.rmtree(os.path.join(root,the_file))            
 
 def _find_root_latex(latex_file_lists):
     for latex_file in latex_file_lists:
@@ -198,3 +213,6 @@ if __name__ == "__main__":
     
     latex2tei = LaTeX2tei(config_path=config_path)
     latex2tei.process(force=force)
+
+    # cleaning
+    latex2tei.post_process()
