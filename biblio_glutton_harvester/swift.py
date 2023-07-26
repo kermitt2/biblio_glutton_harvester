@@ -1,5 +1,6 @@
 import os
 import shutil
+import subprocess
 
 # support for SWIFT object storage
 from swiftclient.multithreading import OutputManager
@@ -141,10 +142,14 @@ class Swift(object):
                     local_path = down_res['path']
 
                     # decompress if required
-                    result_compression = _check_compression(local_path)
-                    if not result_compression:
-                        logging.error("decompression failed for " + local_path)
-                    else:
+                    if local_path.endswith(".gz"):
+                        try:
+                            subprocess.check_call(['gunzip', '-f', local_path])
+                            local_path = local_path.replace(".gz", "")
+                        except:
+                            logging.error("gunzip failed")
+
+                    if local_path != dest_path:
                         shutil.move(local_path, dest_path)
                 else:
                     logging.error("'%s' download failed" % down_res['object'])
@@ -153,7 +158,7 @@ class Swift(object):
             logging.exception("error downloading file from SWIFT container")
             return None
 
-        return os.path.join(dest_path)
+        return dest_path
 
     def get_swift_list(self, dir_name=None):
         """
