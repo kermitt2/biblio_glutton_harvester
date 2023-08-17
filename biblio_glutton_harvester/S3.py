@@ -75,6 +75,9 @@ class S3(object):
         #it_exists = self.s3_object_exists(file_path)
         #print(file_path+":", str(it_exists))
 
+        if file_path == None or dest_path == None:
+            return None
+
         s3_client = self.conn
         #file_name = os.path.basename(file_path)
         dir_name = os.path.dirname(dest_path)

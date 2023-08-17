@@ -182,13 +182,13 @@ class LaTeX2tei(object):
                 except OSError:
                     logging.exception("Error cleaning tmp files: " + file_path)
 
-        # walk through the data directory, copy .nxml files to the temp directory
+        # walk through the data directory for cleaning remaining numerous latexml generated files
         for root, dirs, files in os.walk(self.config["data_path"]):
             for the_file in files:
                 if the_file.endswith(".css") or the_file.endswith(".cache"):
                     os.remove(os.path.join(root,the_file))
-                elif os.path.isdir(the_file):
-                    shutil.rmtree(os.path.join(root,the_file))            
+                elif the_file.endswith(".png") and the_file.startswith("x") and the_file.find("-thumb-") == -1:
+                    os.remove(os.path.join(root,the_file))
 
 def _find_root_latex(latex_file_lists):
     for latex_file in latex_file_lists:

@@ -1381,6 +1381,9 @@ def _download_arxiv(url, filename, local_entry, config= None):
 
     # PDF
     arxiv_url_pdf = arxiv_url_to_path(url, ext='.pdf.gz')
+    if arxiv_url_pdf == None:
+        return result, local_entry
+
     # we are using S3 or Swift at this stage
     pdf_file_path = None
     if s3_arxiv != None:
@@ -1828,7 +1831,7 @@ def arxiv_url_to_path(url, ext='.pdf'):
         yymm = filename[:4]
         return '/'.join([prefix, yymm, filename, filename + ext])
     except:
-        logging.exception("Incorrect arXiv url format, could not extract path")
+        logging.exception("Incorrect arXiv url format, could not extract path: " + url)
 
 def arxiv_url_to_id(url):
     """
@@ -1844,7 +1847,8 @@ def arxiv_url_to_id(url):
     except:
        #logging.exception("Incorrect arXiv url format, could not extract arXiv identifier")
        pass
-
+    return None
+    
 def plos_url_to_path(url, local_entry):
     """
     In order to access to PLOS JATS and TEI XML via a mirror path based on the requested PLOS PDF URL

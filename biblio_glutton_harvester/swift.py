@@ -117,6 +117,9 @@ class Swift(object):
         """
         #print("download_file:", file_path, dest_path)
 
+        if file_path == None or dest_path == None:
+            return None
+
         prefix = os.path.dirname(file_path)
         outfile = os.path.basename(dest_path)
         opts = {

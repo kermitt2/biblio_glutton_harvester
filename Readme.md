@@ -248,7 +248,9 @@ This will apply Pub2TEI (a set of XSLT) to all the harvested `*.nxml` files and 
 00/0a/je/vz/000ajevz/000ajevz.pub2tei.tei.xml
 ```
 
-Note that Pub2TEI supports a lot of other publisher's XML formats (and variants of these formats), so the principle and current tool could be used to transform different publisher XML formats into a single one (TEI) - not just NLM/JATS, facilitating and centralizing further ingestion and process by avoiding to write complicated XML parsers for each case. 
+Note 1: Pub2TEI supports a lot of other publisher's XML formats (and variants of these formats), so the principle and current tool could be used to transform different publisher XML formats into a single one (TEI) - not just NLM/JATS, facilitating and centralizing further ingestion and process by avoiding to write complicated XML parsers for each case. 
+
+Note 2: It is expected to get `8 transformations failed` at the end of the process, these "failed" transformations correspond to temporary empty DTD added to avoid loading DTD online for each input XML document.  
 
 ## Converting the LaTeX source files into XML TEI
 
