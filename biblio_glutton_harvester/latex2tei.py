@@ -2,7 +2,7 @@ import argparse
 import os
 import shutil
 import subprocess
-from article_dataset_builder.S3 import S3
+import biblio_glutton_harvester.S3 as S3
 import biblio_glutton_harvester.swift as swift
 import json
 import time
