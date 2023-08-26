@@ -148,9 +148,10 @@ class LaTeX2tei(object):
         cmd2 += " --destination " + tei_destination + " --quiet --pmml --mathtex --format tei  --novalidate --nopictureimages --nographicimages --sourcedirectory " + directory_to_extract_to + " " + latexml_file
 
         try:
-            result = subprocess.check_call(cmd1, shell=True)
-            #result = subprocess.check_output(cmd1, timeout=60)
-            result = subprocess.check_call(cmd2, shell=True)
+            #result = subprocess.check_call(cmd1, shell=True)
+            result = subprocess.run(cmd1, shell=True, check=True, timeout=240)
+            #result = subprocess.check_call(cmd2, shell=True)
+            result = subprocess.run(cmd2, shell=True, check=True, timeout=60)
             result = "success"
         except subprocess.CalledProcessError as e:   
             print("e.returncode", e.returncode)
@@ -211,8 +212,14 @@ if __name__ == "__main__":
     config_path = args.config
     force = args.force
     
+    start_time = time.time()
+
     latex2tei = LaTeX2tei(config_path=config_path)
     latex2tei.process(force=force)
 
+    runtime = round(time.time() - start_time, 3)
+    print("runtime: %s seconds " % (runtime))
+
     # cleaning
     latex2tei.post_process()
+    exit(0)

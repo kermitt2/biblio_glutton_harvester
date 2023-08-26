@@ -176,5 +176,12 @@ if __name__ == "__main__":
     config_path = args.config
     force = args.force
     
+    start_time = time.time()
+
     nlm2tei = Nlm2tei(config_path=config_path)
     nlm2tei.process(force=force)
+
+    runtime = round(time.time() - start_time, 3)
+    print("runtime: %s seconds " % (runtime))
+
+    exit(0)
