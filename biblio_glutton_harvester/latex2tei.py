@@ -153,7 +153,7 @@ class LaTeX2tei(object):
             #result = subprocess.check_call(cmd2, shell=True)
             result = subprocess.run(cmd2, shell=True, check=True, timeout=60)
             result = "success"
-        except subprocess.CalledProcessError as e:   
+        except subprocess.CalledProcessError as e: 
             print("e.returncode", e.returncode)
             #print("e.output", e.output)
             #if e.output is not None and e.output.startswith('error: {'):
