@@ -27,6 +27,8 @@ import argparse
 import yaml
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
+import shutil
+import gzip
 
 file_types = [ "pdf", "tei", "jats", "latex_sources", "img_assets", "metadata", "thumb", "dataset", "software"] 
 
@@ -86,6 +88,13 @@ def create_archives(input_raw, output=None, archive_type=None):
             else:
                 make_zip(os.path.join(output,file_type+".zip"), all_lists[file_type], input_raw)
             nb_archives_files += 1
+
+    # finally copy the catalogue file, if present, as gzipped in the output
+    map_file_path = os.path.join(input_raw, "map.jsonl")
+    if os.path.isfile(map_file_path):
+        with open(map_file_path, 'rb') as f_in:
+            with gzip.open(os.path.join(output, "map.jsonl.gz"), 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
 
     return nb_archives_files
 
