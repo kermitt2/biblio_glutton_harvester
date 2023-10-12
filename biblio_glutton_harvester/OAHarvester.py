@@ -393,11 +393,22 @@ class OAHarvester(object):
                             entry['best_oa_location'] = oa_location
                             break
 
+                # optionally, skip the IEEE locations
+                if "ieee" in self.config["resources"] and self.config["resources"]["ieee"] and "skip" in self.config["resources"]["ieee"] and self.config["resources"]["ieee"]["skip"]:
+                   if 'best_oa_location' in entry and entry['best_oa_location'] != None and 'url_for_pdf' in entry['best_oa_location'] and entry['best_oa_location']['url_for_pdf'] != None:
+                        if entry['best_oa_location']['url_for_pdf'].find("ieee.org") != -1:
+                            del entry['best_oa_location']
+
                 if 'oa_locations' in entry and len(entry['oa_locations'])>0:
                     # if still no best location, take the first one with a valid link to a PDF
                     # otherwise, we store lternative non-best PDF URL to improve chance of download
                     for oa_location in entry['oa_locations']:
                         if 'url_for_pdf' in oa_location and oa_location['url_for_pdf'] != None:
+                            # optionally, skip the IEEE locations
+                            if "ieee" in self.config["resources"] and self.config["resources"]["ieee"] and "skip" in self.config["resources"]["ieee"] and self.config["resources"]["ieee"]["skip"]:
+                                if oa_location['url_for_pdf'] != None:
+                                    if oa_location['url_for_pdf'].find("ieee.org") != -1:
+                                        continue
                             if not 'best_oa_location' in entry:
                                 entry['best_oa_location'] = oa_location
                             elif entry['best_oa_location'] != oa_location:
@@ -1256,6 +1267,7 @@ def _download(url, filename, local_entry, config=None):
                         result = _download_wget(alternative_oa_location["url_for_pdf"], filename)
 
                     if result == SUCCESS_DOWNLOAD:
+                        # update best oa location from successful alternative oa location
                         local_entry['best_oa_location'] = alternative_oa_location
                         break
 

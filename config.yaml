@@ -40,6 +40,10 @@ resources:
             aws_secret_access_key: ~
             region: ~
             aws_end_point: ~
+    ieee:
+        # skip IEEE download, as they might complain based on the downloaded volume
+        # other download options will be used as fallback
+        skip: true
 
 # metadat services to use to retrieve metadata
 metadata:
