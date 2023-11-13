@@ -1235,8 +1235,8 @@ def _download(url, filename, local_entry, config=None):
             result = _download_ftp(url, filename) 
         '''
 
-    #if result != SUCCESS_DOWNLOAD:
-    #    result = _download_cloudscraper(url, filename)
+    if result != SUCCESS_DOWNLOAD and config["cloudflare_support"]:
+        result = _download_cloudscraper(url, filename)
 
     if result != SUCCESS_DOWNLOAD:
         result = _download_requests(url, filename)
@@ -1257,8 +1257,8 @@ def _download(url, filename, local_entry, config=None):
                             # but as last options why not
                             result = _download_ftp(alternative_oa_location["url_for_pdf"], filename) 
                         '''
-                    #if result != SUCCESS_DOWNLOAD:
-                    #    result = _download_cloudscraper(alternative_oa_location["url_for_pdf"], filename)
+                    if result != SUCCESS_DOWNLOAD and config["cloudflare_support"]:
+                        result = _download_cloudscraper(alternative_oa_location["url_for_pdf"], filename)
 
                     if result != SUCCESS_DOWNLOAD:
                         result = _download_requests(alternative_oa_location["url_for_pdf"], filename)

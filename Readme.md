@@ -3,7 +3,7 @@
 
 # Open Access PDF harvester
 
-Python utility for harvesting efficiently a very large Open Access collection of scholar PDF and metadata: 
+This tool is a Python utility for harvesting efficiently a very large Open Access collection of scholar PDF and metadata, from the Unpaywall dataset, from PubMed Central or from a given list of DOI: 
 
 * The downloaded PDF can be stored either on an Amazon S3 bucket, on a SWIFT object storage (OpenStack) or on a local storage, with UUID renaming/mapping. 
 
@@ -78,8 +78,10 @@ A configuration file must be completed, by default the file `config.yaml` will b
 
 - `compression` indicates if the resource files need to be compressed with `gzip` or not. Default is true, which means that all the harvested files will have an additional extension `.gz`. 
 
-- `batch_size` gives the maximum number of parallel tasks (download, storage, compression, validation, ...) performed at the same time, the process will move to a new batch only when all the PDF and metadata of the previous batch have been harvested and valiadated.  
+- `batch_size` gives the maximum number of parallel tasks (download, storage, compression, validation, ...) performed at the same time, the process will move to a new batch only when all the PDF and metadata of the previous batch have been harvested and validated.  
  
+- `cloudflare_support` (`true` or `false`, default is `false`) indicates if cloudscraper should be used to manage download following cloudflare challenge(s), this will slow down very significantly the average download time, but should provide a higher download success rate.
+
 The `resources` part of the configuration indicates how to access PubMed Central (PMC), arXiv and PLOS resources. 
 
 - For PMC, `prioritize_pmc` indicates if the harvester has to choose a PMC PDF (NIH PMC or Europe PMC) when available instead of a publisher PDF, this can improve the harvesting success rate and performance, but depending on the task the publisher PDF might be preferred. The `pmc_base` is normally the NIH FTP address where to find the PDF and full text JATS. 
@@ -272,6 +274,35 @@ This will apply LaTeXML to all the harvested `*.zip` files, examine the `.tex` f
 
 ```
 ea/53/8f/ec/ea538fec-f7ec-4119-bcab-7362a47b31b6/ea538fec-f7ec-4119-bcab-7362a47b31b6.latex.tei.xml
+```
+
+## Harvesting from a list of DOI
+
+The tool has been designed first for mass harvesting of full texts from the Unpaywall dataset or from PubMed Central. However, it can also be used from a list of DOI to donwload and an Unpaywall dump. The list of DOI to harvest must be provided in a file, with one DOI per line. The following script will generate the subset of the Unpaywall dataset for this list of DOI:
+
+```
+usage: unpaywall_preprocess_selection.py [-h] [--unpaywall UNPAYWALL] [--dois DOIS] [--output OUTPUT]
+
+Open Access PDF harvester
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --unpaywall UNPAYWALL
+                        path to the Unpaywall dataset (gzipped)
+  --dois DOIS           path to the list of DOIs to be used to create the Unpaywall subset
+  --output OUTPUT       where to write the subset Unpaywall file, a .json.gz extension file
+```
+
+For example, with a file of DOI (one DOI per line) called `dois.txt`:
+
+```console
+python3 biblio_glutton_harvester/unpaywall_preprocess_selection.py --unpaywall unpaywall_snapshot_2023-11-12T083002.jsonl.gz --dois dois.txt --output dois-unpaywall.json.gz
+```
+
+The generated file `dois-unpaywall.json.gz` is the unpaywall subset corresponding to the list of DOI to donwload, which can then be used with the main harvesting command:
+
+```bash
+> python3 -m biblio_glutton_harvester.OAHarvester --unpaywall dois-unpaywall.json.gz
 ```
 
 ## Troubleshooting with imagemagick

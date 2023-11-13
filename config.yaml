@@ -20,6 +20,11 @@ compression: true
 # max parallel tasks (download, storage, compression, validation, ...)
 batch_size: 100
 
+# if true, use cloudscraper to manage download following cloudflare challenge(s),
+# this will slow down very significantly the average download time, but provide
+# a higher download success rate
+cloudflare_support: false
+
 # how to access resources, mirrors of dump not accessible at file-level
 # and how to access the mirrors if on a S3 compatible storage 
 resources:
