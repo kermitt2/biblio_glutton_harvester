@@ -1731,7 +1731,7 @@ def _create_map_entry(local_entry):
     arxiv_id = None
     urls = []
     if 'best_oa_location' in local_entry and 'url_for_pdf' in local_entry['best_oa_location']:
-        urls.append(local_entry['best_oa_location']['url'])
+        urls.append(local_entry['best_oa_location']['url_for_pdf'])
     if "alternative_oa_locations" in local_entry and local_entry["alternative_oa_locations"]:
         for alternative_oa_location in local_entry["alternative_oa_locations"]:
             urls.append(alternative_oa_location['url'])
