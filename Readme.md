@@ -1,11 +1,11 @@
 [![PyPI version](https://badge.fury.io/py/biblio_glutton_harvester.svg)](https://badge.fury.io/py/biblio_glutton_harvester)
 [![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
 
-# Open Access PDF harvester
+# Open Access harvester
 
-This tool is a Python utility for harvesting efficiently a very large Open Access collection of scholar PDF and metadata, from the Unpaywall dataset, from PubMed Central or from a given list of DOI: 
+This tool is a Python utility for harvesting efficiently a very large Open Access collection of scholar PDF, XML and metadata, from the Unpaywall dataset, from PubMed Central or from a given list of DOI: 
 
-* The downloaded PDF can be stored either on an Amazon S3 bucket, on a SWIFT object storage (OpenStack) or on a local storage, with UUID renaming/mapping. 
+* The downloaded PDF or XML can be stored either on an Amazon S3 bucket, on a SWIFT object storage (OpenStack) or on a local storage, with UUID renaming/mapping. 
 
 * Downloads and storage uploads over HTTP(S) are multi-threaded for best robustness and efficiency. 
 
@@ -19,11 +19,13 @@ This tool is a Python utility for harvesting efficiently a very large Open Acces
 
 * Mirrors of pre-downloaded/dump resources can be used as the harvesting is performed for higher download rate for arXiv and PLOS resources.
 
-* As a bonus, image thumbnails of the front page of the PDF are created and stored with the PDF.
+* As a bonus, image thumbnails of the front page of the PDF can be created and stored with the PDF.
 
-* It is also possible to harvest only a random sample of PDF instead of complete sets. 
+* It is also possible to harvest only a random sample of PDF or just a list of DOIs instead of complete sets. 
 
-The utility can be used in particular to harvest the full **Unpaywall** dataset (PDF) and the full **PMC** publications (PDF and corresponding NLM XML files). The tool is designed to scale to several ten million of full text and metadata downloads.
+* For full texts present on PubMed Central, JATS XML can be downloaded complementary to PDF. Similarly, if an arXiv source mirror is provided, the PDF and LaTex source from arXiv will be harvested. 
+
+The utility can be used in particular to harvest the full **Unpaywall** dataset (PDF) and the full **PMC** publications (PDF and corresponding JATS/NLM XML files). The tool is designed to scale to several ten million of full text and metadata downloads.
 
 ## Requirements
 
@@ -31,7 +33,7 @@ The utility requires Python 3.6 or more. It is developed for a deployment on a P
 
 The utility will use some local storage dedicated to the embedded databases keeping track of the advancement of the harvesting, metadata and temporary downloaded resources. Consider a few GB of free space for a large scale harvesting of TB of PDF. 
 
-__Storage__: as a rule of thumb, consider bewteen 1 and 1.5 TB for storage 1 million scholar PDF. As of May 2023, the full Unpaywall collection takes around 50TB. 
+__Storage__: as a rule of thumb, consider bewteen 1 and 1.5 TB for storing 1 million scholar PDF. As of May 2023, we harvested 35M full texts for the full Unpaywall collection, which takes around 45TB storage space. 
 
 ## Install
 
@@ -86,9 +88,9 @@ The `resources` part of the configuration indicates how to access PubMed Central
 
 - For PMC, `prioritize_pmc` indicates if the harvester has to choose a PMC PDF (NIH PMC or Europe PMC) when available instead of a publisher PDF, this can improve the harvesting success rate and performance, but depending on the task the publisher PDF might be preferred. The `pmc_base` is normally the NIH FTP address where to find the PDF and full text JATS. 
 
-- For arXiv, we indicate a possible mirror on a S3 compatible storage, as created with [arxiv_harvester](https://github.com/kermitt2/arxiv_harvester) (a bit more than 2TB for PDf and metadata only, 3TB more with LaTeX sources). Note that the path to individual resources is resolved based on the arxiv ID as documented in [arxiv_harvester](https://github.com/kermitt2/arxiv_harvester). 
+- For arXiv, we indicate a possible mirror on a S3 compatible storage, as created with [arxiv_harvester](https://github.com/kermitt2/arxiv_harvester) (a bit more than 2TB for PDf and metadata only, 3TB more with LaTeX sources). Note that the path to individual resources is resolved based on the arxiv ID as documented in [arxiv_harvester](https://github.com/kermitt2/arxiv_harvester). The LaTeX sources of the arXiv articles can be added to this arXiv mirror and will be harvested together with the PDF. The LaTeX source tar gzipped file of a given resource must be under the same path as the PDF. See (here)[https://info.arxiv.org/help/bulk_data_s3.html] about how to copy the arXiv LaTeX sources on S3 (it will cost around $500 as AWS requester S3 bucket fees). 
 
-- For PLOS, if the "All Of PLOS" collection have been downloaded (around 330K JATS files), we indicate a possible mirror on a S3 compatible storage (see the zpped dump at <https://plos.org/text-and-data-mining/> or <https://github.com/PLOS/allofplos>)
+- For PLOS, if the "All Of PLOS" collection have been downloaded (around 330K JATS files), we indicate a possible mirror on a S3 compatible storage (see the zpped dump at <https://plos.org/text-and-data-mining/> or <https://github.com/PLOS/allofplos>).
 
 In `metadata` part of the configuration:
 
@@ -312,20 +314,6 @@ A relatively recent update (end of October 2018) of imagemagick is breaking the 
 
 ```
 <!-- <policy domain="coder" rights="none" pattern="PDF" /> -->
-```
-
-## Building and deploying a Docker container
-
-You need `docker` and `docker-compose` installed on your system. 
-
-A `docker-compose.yml` file is available with the project, but you will need additionally:
-
-- to update a configuration file according to your storage requirements (local, S3 or SWIFT)
-
-- to create an external volume to store the embedded databases keeping track of the advancement of the harvesting, metadata and temporary downloaded resources, it's also on this external volume that the input file must be stored (the unpaywall dump file or the NIH PMC identifier list file) 
-
-```console
-docker-compose run --rm harvester
 ```
 
 ## License and contact

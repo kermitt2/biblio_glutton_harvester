@@ -23,6 +23,16 @@ def create_selection(unpaywall, dois, output=None):
         output = "output.json.gz"
     
     with gzip.open(output, 'wt') as output_file: 
+
+        # add DOI not present in CrossRef/Unpaywall
+        for doi in dois:
+            entry = create_entry_from_DOI(doi)
+            if entry != None:
+                nb_entries += 1
+                json_string = json.dumps(entry)
+                output_file.write(json_string)
+                output_file.write("\n")
+
         gz = gzip.open(unpaywall, 'rt')
         position = 0
         current_bin = 0
@@ -47,9 +57,108 @@ def load_dois(input):
     dois = set()
     with open(input) as file:
         for line in file:
-            dois.add(line.strip())
+            line = line.strip()
+            if line.startswith("https://doi.org/"):
+                line = line.replace("https://doi.org/", "")
+            dois.add(line)
     return dois
 
+
+def create_entry_from_DOI(doi):
+    """
+    Certain DOI are not present in CrossRef and Unpaywall, but can be mapped to full texts,
+    this is the case for arXiv DOIs. 
+    Unfortunately those DOI are used now more and more as normal crossref DOI, but will not be
+    resolved by CrossRef, so ad hoc mapping are necessary. 
+
+    TODO: extend with other similar sad DOI if relevant
+
+    Note: bioRxiv DOI are normal CrossRef DOI !
+    """
+    if doi.startswith("10.48550/arxiv"):
+        # arXiv has special DOI in the form: "10.48550/arxiv.", followed by arXiv identifier
+        entry = create_entry_template(doi, True)
+        local_url = doi.replace("10.48550/arxiv.", "https://arxiv.org/pdf/")
+        local_url_landing_page = doi.replace("10.48550/arxiv.", "https://arxiv.org/abs/")
+        oa_location = create_oa_location_template(local_url+".pdf", "arXiv", local_url+".pdf", local_url_landing_page)
+        entry["oa_locations"] = []
+        entry["oa_locations"].append(oa_location)
+        entry["best_oa_location"] = oa_location
+        entry["first_oa_location"] = oa_location
+        return entry
+    else: 
+        return None
+
+
+def create_entry_template(doi, is_oa):
+    '''
+    As of Decembre 2023 Unpaywall format, it looks like this:
+
+    {
+        "doi": "10.18653/v1/2023.acl-short.82", 
+        "year": 2023, 
+        "genre": "proceedings-article", 
+        "is_oa": true, 
+        "title": "Controllable Mixed-Initiative Dialogue Generation through Prompting", 
+        "doi_url": "https://doi.org/10.18653/v1/2023.acl-short.82", 
+        "updated": "2023-08-05T06:24:57.421378", 
+        "oa_status": "hybrid", 
+        "publisher": "Association for Computational Linguistics", 
+        "z_authors": [{"given": "Maximillian", "family": "Chen", "sequence": "first"}, {"given": "Xiao", "family": "Yu", "sequence": "additional"}, {"given": "Weiyan", "family": "Shi", "sequence": "additional"}, {"given": "Urvi", "family": "Awasthi", "sequence": "additional"}, {"given": "Zhou", "family": "Yu", "sequence": "additional"}], 
+        "is_paratext": false, 
+        "journal_name": "Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers)", 
+        "oa_locations": [
+                {"url": "https://aclanthology.org/2023.acl-short.82.pdf", "pmh_id": null, "is_best": true, "license": "cc-by", "oa_date": "2023-01-01", "updated": "2023-08-05T06:23:59.255925", "version": "publishedVersion", "evidence": "open (via page says license)", "host_type": "publisher", "endpoint_id": null, "url_for_pdf": "https://aclanthology.org/2023.acl-short.82.pdf", "url_for_landing_page": "https://doi.org/10.18653/v1/2023.acl-short.82", "repository_institution": null}, 
+                {"url": "https://arxiv.org/pdf/2305.04147", "pmh_id": "oai:arXiv.org:2305.04147", "is_best": false, "license": null, "oa_date": "2023-05-09", "updated": "2023-05-11T19:04:59.417689", "version": "submittedVersion", "evidence": "oa repository (via OAI-PMH title and first author match)", "host_type": "repository", "endpoint_id": "ca8f8d56758a80a4f86", "url_for_pdf": "https://arxiv.org/pdf/2305.04147", "url_for_landing_page": "https://arxiv.org/abs/2305.04147", "repository_institution": "Cornell University - arXiv"}
+            ], 
+        "data_standard": 2, 
+        "journal_is_oa": false, 
+        "journal_issns": null, 
+        "journal_issn_l": null, 
+        "published_date": "2023-01-01", 
+        "best_oa_location": {"url": "https://aclanthology.org/2023.acl-short.82.pdf", "pmh_id": null, "is_best": true, "license": "cc-by", "oa_date": "2023-01-01", "updated": "2023-08-05T06:23:59.255925", "version": "publishedVersion", "evidence": "open (via page says license)", "host_type": "publisher", "endpoint_id": null, "url_for_pdf": "https://aclanthology.org/2023.acl-short.82.pdf", "url_for_landing_page": "https://doi.org/10.18653/v1/2023.acl-short.82", "repository_institution": null}, 
+        "first_oa_location": {"url": "https://aclanthology.org/2023.acl-short.82.pdf", "pmh_id": null, "is_best": true, "license": "cc-by", "oa_date": "2023-01-01", "updated": "2023-08-05T06:23:59.255925", "version": "publishedVersion", "evidence": "open (via page says license)", "host_type": "publisher", "endpoint_id": null, "url_for_pdf": "https://aclanthology.org/2023.acl-short.82.pdf", "url_for_landing_page": "https://doi.org/10.18653/v1/2023.acl-short.82", "repository_institution": null}, 
+        "journal_is_in_doaj": false, 
+        "has_repository_copy": true, 
+        "oa_locations_embargoed": []
+    }
+
+    In the created entry, we only keep what will be used by the harvester. 
+    '''
+    result = {}
+    result["doi"] = doi
+    result["is_oa"] = is_oa
+    result["doi_url"] = "https://doi.org/"+doi
+    return result
+
+def create_oa_location_template(url, license, url_for_pdf, url_for_landing_page):
+    '''
+    As of Decembre 2023 Unpaywall format, it looks like this:
+
+    {
+        "url": "https://aclanthology.org/2023.acl-short.82.pdf", 
+        "pmh_id": null, 
+        "is_best": true, 
+        "license": "cc-by", 
+        "oa_date": "2023-01-01", 
+        "updated": "2023-08-05T06:23:59.255925", 
+        "version": "publishedVersion", 
+        "evidence": "open (via page says license)", 
+        "host_type": "publisher", 
+        "endpoint_id": null, 
+        "url_for_pdf": "https://aclanthology.org/2023.acl-short.82.pdf", 
+        "url_for_landing_page": "https://doi.org/10.18653/v1/2023.acl-short.82", 
+        "repository_institution": null
+    }
+
+    In the created entry, we only keep what will be used by the harvester. 
+    '''
+    result = {}
+    result["url"] = url
+    result["license"] = license
+    result["url_for_pdf"] = url_for_pdf
+    result["url_for_landing_page"] = url_for_landing_page
+    return result
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = "Open Access PDF harvester")

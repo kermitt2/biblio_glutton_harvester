@@ -594,7 +594,7 @@ class OAHarvester(object):
 
     def processBatch(self, urls, filenames, entries):
         with ThreadPoolExecutor(max_workers=12) as executor:
-            results = executor.map(_download, urls, filenames, entries)#, timeout=30)
+            results = executor.map(_download, urls, filenames, entries, timeout=300)
 
         # LMDB write transaction must be performed in the thread that created the transaction, so
         # better to have the following lmdb updates out of the paralell process
@@ -674,7 +674,7 @@ class OAHarvester(object):
 
         # finally we can parallelize the thumbnail/upload/file cleaning steps for this batch
         with ThreadPoolExecutor(max_workers=12) as executor:
-            results = executor.map(self.manageFiles, entries)#, timeout=30)
+            results = executor.map(self.manageFiles, entries, timeout=30)
 
     def getUUIDByIdentifier(self, identifier):
         txn = self.env_doi.begin()
@@ -1831,25 +1831,33 @@ def _plos_mirror(local_config):
             return True
     return False
 
-def arxiv_url_to_path(url, ext='.pdf'):
+def arxiv_url_to_path(urla, ext='.pdf'):
     """
     In order to access to an arXiv PDF via a mirror path based on the requested arXiv PDF URL
     See https://github.com/kermitt2/arxiv_harvester to create the mirror
     """
     try:
+        if urla.endswith(".pdf"):
+            url = urla.replace(".pdf", "")
+        else:
+            url = urla
         _id = re.findall(r"arxiv\.org/pdf/(.*)$", url)[0]
         prefix = "arxiv" if _id[0].isdigit() else _id.split('/')[0]
         filename = url.split('/')[-1]
         yymm = filename[:4]
         return '/'.join([prefix, yymm, filename, filename + ext])
     except:
-        logging.exception("Incorrect arXiv url format, could not extract path: " + url)
+        logging.exception("Incorrect arXiv url format, could not extract path: " + urla)
 
-def arxiv_url_to_id(url):
+def arxiv_url_to_id(urla):
     """
     Give the arXiv ID from an arxiv URL. Note that version might be missing.
     """
     try:
+        if urla.endswith(".pdf"):
+            url = urla.replace(".pdf", "")
+        else:
+            url = urla
         _id = re.findall(r"arxiv\.org/pdf/(.*)$", url)[0]
         prefix = "arxiv" if _id[0].isdigit() else _id.split('/')[0]
         if prefix == "arxiv":
