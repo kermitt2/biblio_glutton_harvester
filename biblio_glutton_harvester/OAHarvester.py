@@ -594,7 +594,7 @@ class OAHarvester(object):
 
     def processBatch(self, urls, filenames, entries):
         with ThreadPoolExecutor(max_workers=12) as executor:
-            results = executor.map(_download, urls, filenames, entries, timeout=300)
+            results = executor.map(_download, urls, filenames, entries, timeout=60)
 
         # LMDB write transaction must be performed in the thread that created the transaction, so
         # better to have the following lmdb updates out of the paralell process
