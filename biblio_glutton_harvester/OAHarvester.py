@@ -594,7 +594,7 @@ class OAHarvester(object):
 
     def processBatch(self, urls, filenames, entries):
         with ThreadPoolExecutor(max_workers=12) as executor:
-            results = executor.map(_download, urls, filenames, entries, timeout=60)
+            results = executor.map(_download, urls, filenames, entries, timeout=30)
 
         # LMDB write transaction must be performed in the thread that created the transaction, so
         # better to have the following lmdb updates out of the paralell process
@@ -1323,7 +1323,7 @@ def _download_wget(url, filename):
     result = FAIL_DOWNLOAD
     # This is the most robust and reliable way to download files I found with Python... to rely on system wget :)
     #cmd = "wget -c --quiet" + " -O " + filename + ' --connect-timeout=10 --waitretry=10 ' + \
-    cmd = "wget -c --quiet" + " -O " + filename + ' --timeout=20 --waitretry=0 --tries=4 --retry-connrefused ' + \
+    cmd = "wget -c --quiet" + " -O " + filename + ' --timeout=20 --waitretry=0 --tries=4 --read-timeout=20  ' + \
         '--header="User-Agent: ' + _get_random_user_agent()+ '" ' + \
         '--header="Accept: application/pdf, text/html;q=0.9,*/*;q=0.8" --header="Accept-Encoding: gzip, deflate" ' + \
         '--no-check-certificate ' + \
