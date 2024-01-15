@@ -1323,7 +1323,7 @@ def _download_wget(url, filename):
     result = FAIL_DOWNLOAD
     # This is the most robust and reliable way to download files I found with Python... to rely on system wget :)
     #cmd = "wget -c --quiet" + " -O " + filename + ' --connect-timeout=10 --waitretry=10 ' + \
-    cmd = "wget -c --quiet" + " -O " + filename + ' --timeout=20 --waitretry=0 --tries=4 --read-timeout=20  ' + \
+    cmd = "wget -c --quiet" + " -O " + filename + ' --timeout=20 --waitretry=0 --tries=4 ' + \
         '--header="User-Agent: ' + _get_random_user_agent()+ '" ' + \
         '--header="Accept: application/pdf, text/html;q=0.9,*/*;q=0.8" --header="Accept-Encoding: gzip, deflate" ' + \
         '--no-check-certificate ' + \
@@ -1331,8 +1331,8 @@ def _download_wget(url, filename):
     #'--compression=auto ' + \
 
     try:
-        result = subprocess.check_call(cmd, shell=True)
-        
+        result = subprocess.check_call(cmd, shell=True, timeout=100)
+
         # if the used version of wget does not decompress automatically, the following ensures it is done
         result_compression = _check_compression(filename)
         if not result_compression:
